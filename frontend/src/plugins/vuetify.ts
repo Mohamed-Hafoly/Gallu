@@ -1,6 +1,6 @@
+import { useI18n } from "vue-i18n";
 import { createVuetify } from "vuetify";
 import { createVueI18nAdapter } from "vuetify/locale/adapters/vue-i18n";
-import { useI18n } from "vue-i18n";
 import i18n from "./i18n";
 import "@mdi/font/css/materialdesignicons.css";
 import "../styles/layers.css";
@@ -12,15 +12,15 @@ export default createVuetify({
     rtl: { ar: true },
   },
   theme: {
-    utilities: false,
+    // utilities: false,
     defaultTheme: "dark",
     themes: {
       dark: {
         colors: {
           background: "#040404",
-          primary: "#155354",
-          surface: "#549596",
-          tertiary: "EDC1DE",
+          primary: "#549596",
+          surface: "#155354",
+          tertiary: "#EDC1DE",
         },
       },
     },

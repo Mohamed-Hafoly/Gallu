@@ -1,26 +1,18 @@
-import { createI18n } from "vue-i18n";
-import { en, ar } from "vuetify/locale"; 
+import { createI18n, type I18nOptions } from "vue-i18n";
+import { ar as vuetifyAr, en as vuetifyEn } from "vuetify/locale";
+import ar from "@/locales/ar.json";
+import en from "@/locales/en.json";
 
-const messages = {
-  ar: {
-    $vuetify: { ...ar },
-    message: {
-      hello: "مرحبا",
-      Vuetify: "لصث",
-    },
-  },
-  en: {
-    $vuetify: { ...en },
-    message: {
-      hello: "hello world",
-      Vuetify: "Vuetify",
-    },
+const options: I18nOptions = {
+  legacy: false,
+  locale: "en",
+  fallbackLocale: "en",
+  messages: {
+    en: { ...en, $vuetify: vuetifyEn },
+    ar: { ...ar, $vuetify: vuetifyAr },
   },
 };
 
-export default createI18n({
-  legacy: false,
-  locale: "ar",
-  fallbackLocale: "en",
-  messages,
-});
+const i18n = createI18n<false, typeof options>(options);
+
+export default i18n;

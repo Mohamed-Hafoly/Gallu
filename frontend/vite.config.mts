@@ -31,6 +31,10 @@ export default defineConfig({
             weights: [100, 300, 400, 500, 700, 900],
             styles: ["normal", "italic"],
           },
+          {
+            name: "Cairo",
+            weights: [200, 300, 400, 500, 600, 700, 800, 900],
+          },
         ],
       },
     }),

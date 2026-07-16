@@ -2,3 +2,5 @@ node_modules
 .vscode
 .ruler
 AGENTS.md
+auto-imports.d.ts
+typed-router.d.ts

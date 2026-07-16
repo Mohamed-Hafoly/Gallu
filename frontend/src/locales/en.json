@@ -1,0 +1,9 @@
+{
+  "nav": {
+    "home": "Home",
+    "projects": "Projects",
+    "profile": "Profile",
+    "settings": "Settings",
+    "logout": "Log Out"
+  }
+}

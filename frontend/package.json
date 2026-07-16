@@ -15,8 +15,9 @@
     "mcp:revert": "ruler revert"
   },
   "dependencies": {
+    "@fontsource/cairo": "^5.2.7",
     "@fontsource/roboto": "^5.2.10",
-    "@fontsource/roboto-mono": "^5.2.8",
+    "@fontsource/roboto-mono": "^5.2.9",
     "@mdi/font": "7.4.47",
     "pinia": "^3.0.4",
     "vue": "^3.5.30",
