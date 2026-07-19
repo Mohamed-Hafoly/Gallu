@@ -1,5 +1,5 @@
 {
-  "name": "samoona",
+  "name": "gallu",
   "private": true,
   "type": "module",
   "version": "0.0.0",
@@ -19,6 +19,7 @@
     "@fontsource/roboto": "^5.2.10",
     "@fontsource/roboto-mono": "^5.2.9",
     "@mdi/font": "7.4.47",
+    "axios": "^1.18.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.30",
     "vue-i18n": "^11.3.0",

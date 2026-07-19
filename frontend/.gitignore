@@ -4,3 +4,4 @@ node_modules
 AGENTS.md
 auto-imports.d.ts
 typed-router.d.ts
+.env

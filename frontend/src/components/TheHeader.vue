@@ -3,6 +3,7 @@
   import { useI18n } from "vue-i18n";
   import { useDisplay } from "vuetify";
   import { useNavLinks } from "@/composables/useNavLinks";
+  import api from "@/plugins/axios";
 
   const { locale } = useI18n();
   const { navLinks } = useNavLinks();
@@ -18,10 +19,23 @@
 
   const { mobile } = useDisplay();
   const drawer = ref<boolean | null>(null);
+
+  async function checkHealth() {
+    const { data } = await api.get("/up");
+    return data;
+  }
+  async function test() {
+    try {
+      await checkHealth();
+      console.log("API is up");
+    } catch (error) {
+      console.error("API is down or unreachable", error);
+    }
+  }
 </script>
 
 <template>
-  <v-app-bar class="px-3 border-b-1 border-b-tertiary" scroll-behavior="elevate">
+  <v-app-bar class="px-3 border-b border-b-tertiary" scroll-behavior="elevate">
     <template v-if="mobile" #prepend>
       <v-app-bar-nav-icon @click.stop="drawer = !drawer"></v-app-bar-nav-icon>
     </template>
@@ -64,5 +78,7 @@
       nav
       rounded
     />
+
+    <v-btn @click="test"> test api </v-btn>
   </v-navigation-drawer>
 </template>
