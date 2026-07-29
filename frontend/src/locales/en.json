@@ -5,5 +5,27 @@
     "profile": "Profile",
     "settings": "Settings",
     "logout": "Log Out"
+  },
+  "auth": {
+    "register": "Register",
+    "login": "Login",
+    "name": "Name",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "forgotPassword": "Forgot Password?",
+    "resetPassword": "Reset Password",
+    "sendResetLink": "Send Reset Link",
+    "registerToLogin": "Already have an account?",
+    "loginToRegister": "Don't have an account?",
+    "loginHere": "Log in here",
+    "registerHere": "Register here"
+  },
+  "validation": {
+    "required": "This field is required",
+    "minLength": "Must be at least {min} characters",
+    "maxLength": "Must be no more than {max} characters",
+    "emailInvalid": "Enter a valid email address",
+    "passwordMismatch": "Passwords do not match"
   }
 }

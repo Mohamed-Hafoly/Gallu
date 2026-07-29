@@ -1,7 +1,9 @@
-<script setup lang="ts">
+<script setup lang="ts"></script>
 
-</script>
+<template>proejcts</template>
 
-<template>
-    proejcts
-</template>
+<route lang="json">
+{
+  "name": "projects"
+}
+</route>

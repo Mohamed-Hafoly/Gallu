@@ -1,6 +1,7 @@
 // Types
 import type { App } from "vue";
 import { createPinia } from "pinia";
+import { useAuthStore } from "@/stores/auth";
 import i18n from "./i18n";
 /**
  * plugins/index.ts
@@ -11,9 +12,12 @@ import router from "./router";
 // Plugins
 import vuetify from "./vuetify";
 
-export function registerPlugins(app: App) {
+export async function registerPlugins(app: App) {
   app.use(vuetify);
   app.use(createPinia());
   app.use(i18n);
+
+  await useAuthStore().fetchUser();
+
   app.use(router);
 }

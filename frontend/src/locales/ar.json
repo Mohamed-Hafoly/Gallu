@@ -5,5 +5,27 @@
     "profile": "الحساب",
     "settings": "الإعدادات",
     "logout": "تسجيل خروج"
+  },
+  "auth": {
+    "register": "إنشاء حساب",
+    "login": "تسجيل الدخول",
+    "name": "الأسم",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "confirmPassword": "تأكيد كلمة المرور",
+    "forgotPassword": "نسيت كلمة المرور؟",
+    "resetPassword": "إعادة تعيين كلمة المرور",
+    "sendResetLink": "إرسال رابط إعادة التعيين",
+    "registerToLogin": " لديك حساب بالفعل؟",
+    "loginToRegister": "ليس لديك حساب؟",
+    "loginHere": "سجل دخول هنا",
+    "registerHere": "أنشئ حساب هنا"
+  },
+  "validation": {
+    "required": "هذا الحقل مطلوب",
+    "minLength": "يجب أن يتكون من {min} أحرف على الأقل",
+    "maxLength": "يجب ألا يتجاوز {max} حرفًا",
+    "emailInvalid": "يرجى إدخال بريد إلكتروني صحيح",
+    "passwordMismatch": "كلمات المرور غير متطابقة"
   }
 }

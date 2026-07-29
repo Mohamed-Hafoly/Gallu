@@ -21,8 +21,15 @@ export default createVuetify({
           primary: "#549596",
           surface: "#155354",
           tertiary: "#EDC1DE",
+          error: "#F87171",
         },
       },
+    },
+  },
+  defaults: {
+    VTextField: {
+      variant: "outlined",
+      color: "tertiary",
     },
   },
   display: {

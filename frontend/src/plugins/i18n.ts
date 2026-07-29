@@ -5,7 +5,7 @@ import en from "@/locales/en.json";
 
 const options: I18nOptions = {
   legacy: false,
-  locale: "en",
+  locale: "ar",
   fallbackLocale: "en",
   messages: {
     en: { ...en, $vuetify: vuetifyEn },

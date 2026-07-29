@@ -2,6 +2,7 @@ import { fileURLToPath, URL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import Vue from "@vitejs/plugin-vue";
 import Fonts from "unplugin-fonts/vite";
+import Components from "unplugin-vue-components/vite";
 import { defineConfig } from "vite";
 import Vuetify, { transformAssetUrls } from "vite-plugin-vuetify";
 import VueRouter from "vue-router/vite";
@@ -19,6 +20,8 @@ export default defineConfig({
         configFile: "src/styles/settings.scss",
       },
     }),
+    Components(),
+
     Fonts({
       fontsource: {
         families: [

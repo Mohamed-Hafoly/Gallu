@@ -5,3 +5,9 @@
 <template>
     هشيصثب قا
 </template>
+
+<route lang="json">
+{
+  "name": "profile"
+}
+</route>
