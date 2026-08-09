@@ -3,15 +3,15 @@ import { useAuthStore } from "@/stores/auth";
 import i18n from "./i18n";
 import router from "./router";
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
-  withCredentials: true,
-  withXSRFToken: true,
-  headers: {
-    Accept: "application/json",
-    "X-Requested-With": "XMLHttpRequest",
-  },
-});
+  const api = axios.create({
+    baseURL: import.meta.env.VITE_API_BASE_URL,
+    withCredentials: true,
+    withXSRFToken: true,
+    headers: {
+      Accept: "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+    },
+  });
 
 api.interceptors.request.use((config) => {
   config.headers["Accept-Language"] = i18n.global.locale.value;

@@ -1,10 +1,11 @@
+import type { User } from "@/types/user";
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/plugins/axios";
 import router from "@/plugins/router";
 
 export const useAuthStore = defineStore("auth", () => {
-  const user = ref(null);
+  const user = ref<User | null>(null);
 
   function clearSession() {
     user.value = null;
@@ -13,7 +14,7 @@ export const useAuthStore = defineStore("auth", () => {
   async function fetchUser() {
     try {
       const { data } = await api.get("/api/user");
-      user.value = data;
+        user.value = data.data;
     } catch {
       clearSession();
     }
@@ -46,6 +47,11 @@ export const useAuthStore = defineStore("auth", () => {
     router.replace({ name: "login" });
   }
 
+  async function updateProfile(payload: { name: string; email: string }) {
+    await api.put("/api/user/profile-information", payload);
+    await fetchUser();
+  }
+
   return {
     user,
     fetchUser,
@@ -53,5 +59,6 @@ export const useAuthStore = defineStore("auth", () => {
     login,
     register,
     logout,
+    updateProfile,
   };
 });

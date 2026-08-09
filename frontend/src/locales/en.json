@@ -3,15 +3,22 @@
     "home": "Home",
     "projects": "Projects",
     "profile": "Profile",
-    "settings": "Settings",
-    "logout": "Log Out"
+    "settings": "Settings"
+  },
+  "profile": {
+    "title": "Profile Information",
+    "edit": "Edit",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
   },
   "auth": {
     "register": "Register",
     "login": "Login",
+    "logout": "Log Out",
     "name": "Name",
     "email": "Email",
     "password": "Password",
+    "passwordHint": "Password must be at least 8 characters long",
     "confirmPassword": "Confirm Password",
     "forgotPassword": "Forgot Password?",
     "resetPassword": "Reset Password",

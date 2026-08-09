@@ -67,12 +67,14 @@
           <v-text-field
             v-model="formData.email"
             :label="t('auth.email')"
+            :rules="emailRules"
             type="email"
           />
 
           <v-text-field
             v-model="formData.password"
             :label="t('auth.password')"
+            :rules="passwordRules"
             type="password"
           />
 

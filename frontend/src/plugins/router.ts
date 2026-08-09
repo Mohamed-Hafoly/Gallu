@@ -20,17 +20,11 @@ if (import.meta.hot) {
 router.beforeEach((to) => {
   const authStore = useAuthStore();
   const publicRoutes = new Set(["login", "register"]);
-  console.log(authStore.user)
-	if (!authStore.user && !publicRoutes.has(to.name as string)) {
-    console.log('gwيer')
-    console.log(to.name);
+  if (!authStore.user && !publicRoutes.has(to.name as string)) {
     return { name: "login" };
   }
-  
-	if (authStore.user && publicRoutes.has(to.name as string)) {
 
-    console.log("gwer");
-
+  if (authStore.user && publicRoutes.has(to.name as string)) {
     return { name: "home" };
   }
 });

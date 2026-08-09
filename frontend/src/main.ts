@@ -9,8 +9,6 @@ import { createApp } from "vue";
 
 // Plugins
 import { registerPlugins } from "@/plugins";
-import router from "@/plugins/router";
-import { useAuthStore } from "@/stores/auth";
 
 // Components
 import App from "./App.vue";
@@ -23,8 +21,4 @@ const app = createApp(App);
 
 await registerPlugins(app);
 
-const authStore = useAuthStore();
-
-Promise.all([authStore.fetchUser(), router.isReady()]).then(() => {
-  app.mount("#app");
-});
+app.mount("#app");

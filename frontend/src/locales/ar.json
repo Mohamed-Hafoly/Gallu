@@ -3,15 +3,23 @@
     "home": "الرئيسية",
     "projects": "المشاريع",
     "profile": "الحساب",
-    "settings": "الإعدادات",
-    "logout": "تسجيل خروج"
+    "settings": "الإعدادات"
+  },
+  "profile": {
+    "title": "معلومات الحساب",
+    "edit": "تعديل",
+    "cancel": "إلغاء",
+    "confirm": "تأكيد"
   },
   "auth": {
     "register": "إنشاء حساب",
     "login": "تسجيل الدخول",
+    "logout": "تسجيل خروج",
     "name": "الأسم",
     "email": "البريد الإلكتروني",
     "password": "كلمة المرور",
+    "passwordHint": "كلمة السر يجب أن تتكون من 8 أحرف على الأقل",
+
     "confirmPassword": "تأكيد كلمة المرور",
     "forgotPassword": "نسيت كلمة المرور؟",
     "resetPassword": "إعادة تعيين كلمة المرور",

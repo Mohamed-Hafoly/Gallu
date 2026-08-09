@@ -92,7 +92,9 @@
 
           <v-text-field
             v-model="formData.password"
+            :hint="t('auth.passwordHint')"
             :label="t('auth.password')"
+            persistent-hint
             :rules="passwordRules"
             type="password"
           />
