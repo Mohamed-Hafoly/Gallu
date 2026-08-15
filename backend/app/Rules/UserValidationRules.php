@@ -1,9 +1,9 @@
 <?php
 
 // app/Rules/UserValidationRules.php
+
 namespace App\Rules;
 
-use App\Actions\Fortify\PasswordValidationRules;
 use Illuminate\Validation\Rule;
 
 class UserValidationRules
