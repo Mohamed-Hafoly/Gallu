@@ -52,16 +52,16 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    'profile': RouteRecordInfo<
-      'profile',
-      '/profile',
+    'gallery': RouteRecordInfo<
+      'gallery',
+      '/gallery',
       Record<never, never>,
       Record<never, never>,
       | never
     >,
-    'projects': RouteRecordInfo<
-      'projects',
-      '/projects',
+    'profile': RouteRecordInfo<
+      'profile',
+      '/profile',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -110,17 +110,17 @@ declare module 'vue-router/auto-routes' {
       pathParamNames:
         | never
     }
-    'src/pages/profile.vue': {
+    'src/pages/gallery/index.vue': {
       routes:
-        | 'profile'
+        | 'gallery'
       views:
         | never
       pathParamNames:
         | never
     }
-    'src/pages/projects/index.vue': {
+    'src/pages/profile.vue': {
       routes:
-        | 'projects'
+        | 'profile'
       views:
         | never
       pathParamNames:

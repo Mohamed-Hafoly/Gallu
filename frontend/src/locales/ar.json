@@ -1,9 +1,46 @@
 {
+  "common": {
+    "serverError": "حدث خطأ ما. يرجى المحاولة مرة أخرى."
+  },
   "nav": {
     "home": "الرئيسية",
-    "projects": "المشاريع",
+    "gallery": "المعرض",
     "profile": "الحساب",
     "settings": "الإعدادات"
+  },
+  "gallery": {
+    "title": "المعرض",
+    "upload": "إرفع صورة",
+    "uploading": "جارٍ الرفع…",
+    "uploaded": "تم رفع الصورة",
+    "uploadFailed": "فشل رفع الصورة",
+    "empty": "لا توجد صور بعد. ارفع أول صورة لك.",
+    "description": "الوصف",
+    "descriptionPlaceholder": "أوصف صورتك...",
+    "categories": "التصنيفات",
+    "noDescription": "لا يوجد وصف بعد.",
+    "noCategories": "لا توجد تصنيفات بعد.",
+    "edit": "تعديل",
+    "editUnavailable": "التعديل غير متاح بعد.",
+    "delete": "حذف",
+    "deleteConfirm": " حذف هذه الصورة؟",
+    "deleted": "تم حذف الصورة",
+    "deleteFailed": "فشل حذف الصورة",
+    "deleting": "جارٍ الحذف…",
+    "cancel": "إلغاء",
+    "close": "إغلاق",
+    "create": "إنشاء",
+    "newImage": "صورة جديدة",
+    "titleLabel": "العنوان",
+    "titleHint": "مطلوب ، بحد أقصى 140 حرفًا",
+    "descriptionHint": "بحد أقصى 400 حرف",
+    "categoriesHint": "إختر تصنيفًا واحدًا على الأقل",
+    "categoriesRequired": "إختر تصنيفًا واحدًا على الأقل",
+    "imageRequired": "إختر صورة",
+    "chooseImage": "إختر صورة",
+    "changeImage": "تغيير الصورة",
+    "save": "حفظ",
+    "saved": "تم حفظ التغييرات"
   },
   "profile": {
     "title": "معلومات الحساب",
@@ -34,6 +71,8 @@
     "minLength": "يجب أن يتكون من {min} أحرف على الأقل",
     "maxLength": "يجب ألا يتجاوز {max} حرفًا",
     "emailInvalid": "يرجى إدخال بريد إلكتروني صحيح",
-    "passwordMismatch": "كلمات المرور غير متطابقة"
+    "passwordMismatch": "كلمات المرور غير متطابقة",
+    "imageType": "الصور المسموح بها هي JPEG أو PNG أو WEBP فقط",
+    "imageTooLarge": "يجب أن يكون حجم الصورة أقل من {max} ميجابايت"
   }
 }

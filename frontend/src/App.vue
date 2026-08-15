@@ -21,7 +21,12 @@
     </template>
 
     <v-main>
-      <router-view />
+      <div
+        id="main-scroll"
+        class="h-[calc(100dvh-var(--v-layout-top,0px))] overflow-y-auto"
+      >
+        <router-view />
+      </div>
     </v-main>
   </v-app>
 </template>

@@ -2,7 +2,7 @@
   import type { VForm } from "vuetify/components";
   import { computed, reactive, ref } from "vue";
   import { useI18n } from "vue-i18n";
-  import { useValidationRules } from "@/composables/useValidationRules";
+  import { useAuthValidationRules } from "@/composables/useAuthValidationRules";
   import { useAuthStore } from "@/stores/auth";
 
   interface UpdatePayload {
@@ -11,7 +11,7 @@
   }
 
   const { t } = useI18n();
-  const { nameRules, emailRules } = useValidationRules();
+  const { nameRules, emailRules } = useAuthValidationRules();
   const isSubmitting = ref(false);
   const isEditing = ref(false);
   const authStore = useAuthStore();
@@ -53,7 +53,7 @@
 
       isEditing.value = false;
     } catch (error: any) {
-      errorMessage.value = error.response?.data?.message ?? "Update failed.";
+      errorMessage.value = error.userMessage;
     } finally {
       isSubmitting.value = false;
     }

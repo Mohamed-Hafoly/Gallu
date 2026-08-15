@@ -3,8 +3,8 @@ import tailwindcss from "@tailwindcss/vite";
 import Vue from "@vitejs/plugin-vue";
 import Fonts from "unplugin-fonts/vite";
 import Components from "unplugin-vue-components/vite";
-import { defineConfig } from "vite";
 import Vuetify, { transformAssetUrls } from "vite-plugin-vuetify";
+import { defineConfig } from "vitest/config";
 import VueRouter from "vue-router/vite";
 
 export default defineConfig({
@@ -51,5 +51,17 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./vitest.setup.ts"],
+    include: ["src/**/__tests__/**/*.spec.ts"],
+    server: {
+      deps: {
+        // Vuetify components import .css directly; those must be processed by
+        // Vite rather than externalised and imported natively by Node.
+        inline: ["vuetify"],
+      },
+    },
   },
 });

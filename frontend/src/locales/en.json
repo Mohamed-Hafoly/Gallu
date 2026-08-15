@@ -1,9 +1,46 @@
 {
+  "common": {
+    "serverError": "Something went wrong. Please try again."
+  },
   "nav": {
     "home": "Home",
-    "projects": "Projects",
+    "gallery": "Gallery",
     "profile": "Profile",
     "settings": "Settings"
+  },
+  "gallery": {
+    "title": "Gallery",
+    "upload": "Upload Image",
+    "uploading": "Uploading…",
+    "uploaded": "Image uploaded",
+    "uploadFailed": "Upload failed",
+    "empty": "No images yet. Upload your first one.",
+    "description": "Description",
+    "descriptionPlaceholder": "Decribe your image...",
+    "categories": "Categories",
+    "noDescription": "No description yet.",
+    "noCategories": "No categories yet.",
+    "edit": "Edit",
+    "editUnavailable": "Editing is not available yet.",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this image?",
+    "deleted": "Image deleted",
+    "deleteFailed": "Delete failed",
+    "deleting": "Deleting…",
+    "cancel": "Cancel",
+    "close": "Close",
+    "create": "Create",
+    "newImage": "New Image",
+    "titleLabel": "Title",
+    "titleHint": "Required, max 140 characters",
+    "descriptionHint": "Max 400 characters",
+    "categoriesHint": "Select at least one category",
+    "categoriesRequired": "Select at least one category",
+    "imageRequired": "Select an image",
+    "chooseImage": "Choose an image",
+    "changeImage": "Change Image",
+    "save": "Save",
+    "saved": "Changes saved"
   },
   "profile": {
     "title": "Profile Information",
@@ -30,9 +67,11 @@
   },
   "validation": {
     "required": "This field is required",
-    "minLength": "Must be at least {min} characters",
-    "maxLength": "Must be no more than {max} characters",
+    "minLength": "At least {min} characters",
+    "maxLength": "No more than {max} characters",
     "emailInvalid": "Enter a valid email address",
-    "passwordMismatch": "Passwords do not match"
+    "passwordMismatch": "Passwords do not match",
+    "imageType": "Only JPEG, PNG or WEBP images are allowed",
+    "imageTooLarge": "Image must be smaller than {max}MB"
   }
 }

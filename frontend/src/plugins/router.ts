@@ -4,6 +4,7 @@
  * Manual routes for ./src/pages/*.vue
  */
 
+import type { RouteLocationRaw, RouteRecordNameGeneric } from "vue-router";
 import { createRouter, createWebHistory } from "vue-router";
 import { handleHotUpdate, routes } from "vue-router/auto-routes";
 // Composables
@@ -17,9 +18,18 @@ if (import.meta.hot) {
   handleHotUpdate(router);
 }
 
-router.beforeEach((to) => {
+const publicRoutes = new Set(["login", "register"]);
+
+/**
+ * Sends signed-out visitors to login, and signed-in visitors away from the
+ * public auth pages. Exported so it can be unit tested without driving a real
+ * navigation (which would lazy-load every page component).
+ */
+export function authGuard(to: {
+  name?: RouteRecordNameGeneric;
+}): RouteLocationRaw | undefined {
   const authStore = useAuthStore();
-  const publicRoutes = new Set(["login", "register"]);
+
   if (!authStore.user && !publicRoutes.has(to.name as string)) {
     return { name: "login" };
   }
@@ -27,5 +37,7 @@ router.beforeEach((to) => {
   if (authStore.user && publicRoutes.has(to.name as string)) {
     return { name: "home" };
   }
-});
+}
+
+router.beforeEach(authGuard);
 export default router;

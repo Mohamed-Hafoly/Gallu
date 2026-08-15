@@ -2,7 +2,7 @@
   import type { VForm } from "vuetify/components";
   import { reactive, ref } from "vue";
   import { useI18n } from "vue-i18n";
-  import { useValidationRules } from "@/composables/useValidationRules";
+  import { useAuthValidationRules } from "@/composables/useAuthValidationRules";
   import { useAuthStore } from "@/stores/auth";
 
   interface RegisterPayload {
@@ -11,7 +11,7 @@
   }
 
   const { t } = useI18n();
-  const { emailRules, passwordRules } = useValidationRules();
+  const { emailRules, passwordRules } = useAuthValidationRules();
   const isSubmitting = ref(false);
   const authStore = useAuthStore();
 
@@ -34,7 +34,7 @@
     try {
       await authStore.login(formData);
     } catch (error: any) {
-      errorMessage.value = error.response.data.message;
+      errorMessage.value = error.userMessage;
     } finally {
       isSubmitting.value = false;
     }

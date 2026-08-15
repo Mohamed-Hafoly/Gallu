@@ -15,9 +15,9 @@ export function useNavLinks() {
       },
     },
     {
-      title: t("nav.projects"),
-      value: "/projects",
-      props: { to: { name: "projects" }, prependIcon: "mdi-bookshelf" },
+      title: t("nav.gallery"),
+      value: "/gallery",
+      props: { to: { name: "gallery" }, prependIcon: "mdi-image-multiple" },
     },
     {
       title: t("nav.settings"),

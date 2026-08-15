@@ -11,11 +11,22 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    CategoriesField: typeof import('./src/components/Images/Fields/CategoriesField.vue')['default']
+    CategoryChips: typeof import('./src/components/Images/Fields/Category/CategoryChips.vue')['default']
+    CategoryPicker: typeof import('./src/components/Images/Fields/Category/CategoryPicker.vue')['default']
+    ConfirmDialog: typeof import('./src/components/ConfirmDialog.vue')['default']
+    DescriptionField: typeof import('./src/components/Images/Fields/DescriptionField.vue')['default']
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
+    ImageCreateDialog: typeof import('./src/components/Images/ImageCreateDialog.vue')['default']
+    ImageDetailDialog: typeof import('./src/components/Images/ImageDetailDialog.vue')['default']
+    ImageDialog: typeof import('./src/components/Images/ImageDialog.vue')['default']
+    ImagePicker: typeof import('./src/components/Images/Fields/ImagePicker.vue')['default']
+    ImageStage: typeof import('./src/components/Images/Fields/ImageStage.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     TheAppBar: typeof import('./src/components/TheAppBar.vue')['default']
     TheNav: typeof import('./src/components/TheNav.vue')['default']
     TheProfileMenu: typeof import('./src/components/TheProfileMenu.vue')['default']
+    TitleField: typeof import('./src/components/Images/Fields/TitleField.vue')['default']
   }
 }

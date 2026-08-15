@@ -17,12 +17,12 @@
 </script>
 
 <template>
-  <v-app-bar class="px-3 border-b border-b-tertiary" scroll-behavior="elevate">
+  <v-app-bar class="px-3 border-b border-b-tertiary">
     <template v-if="showNavIcon" #prepend>
       <v-app-bar-nav-icon @click.stop="emit('toggle-drawer')" />
     </template>
 
-    <v-app-bar-title>Samoona</v-app-bar-title>
+    <v-app-bar-title>Gallu</v-app-bar-title>
 
     <template #append>
       <v-menu>

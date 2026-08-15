@@ -1,7 +1,7 @@
 import type { Ref } from "vue";
 import { useI18n } from "vue-i18n";
 
-export function useValidationRules() {
+export function useAuthValidationRules() {
   const { t } = useI18n();
 
   const required = (v: string) => !!v || t("validation.required");
@@ -27,10 +27,6 @@ export function useValidationRules() {
   ];
 
   return {
-    required,
-    minLength,
-    maxLength,
-    email,
     nameRules,
     emailRules,
     passwordRules,
