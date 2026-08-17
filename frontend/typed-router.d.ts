@@ -38,6 +38,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'profile': RouteRecordInfo<
+      'profile',
+      '/profile',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'register': RouteRecordInfo<
       'register',
       '/register',
@@ -52,16 +59,30 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    'gallery': RouteRecordInfo<
-      'gallery',
-      '/gallery',
+    'admin-categories': RouteRecordInfo<
+      'admin-categories',
+      '/admin/categories',
       Record<never, never>,
       Record<never, never>,
       | never
     >,
-    'profile': RouteRecordInfo<
-      'profile',
-      '/profile',
+    'admin-teams': RouteRecordInfo<
+      'admin-teams',
+      '/admin/teams',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'admin-users': RouteRecordInfo<
+      'admin-users',
+      '/admin/users',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'gallery': RouteRecordInfo<
+      'gallery',
+      '/gallery',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -94,6 +115,14 @@ declare module 'vue-router/auto-routes' {
       pathParamNames:
         | never
     }
+    'src/pages/(auth)/profile.vue': {
+      routes:
+        | 'profile'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
     'src/pages/(auth)/register.vue': {
       routes:
         | 'register'
@@ -110,17 +139,33 @@ declare module 'vue-router/auto-routes' {
       pathParamNames:
         | never
     }
-    'src/pages/gallery/index.vue': {
+    'src/pages/admin/categories.vue': {
       routes:
-        | 'gallery'
+        | 'admin-categories'
       views:
         | never
       pathParamNames:
         | never
     }
-    'src/pages/profile.vue': {
+    'src/pages/admin/teams.vue': {
       routes:
-        | 'profile'
+        | 'admin-teams'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/admin/users.vue': {
+      routes:
+        | 'admin-users'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/gallery/index.vue': {
+      routes:
+        | 'gallery'
       views:
         | never
       pathParamNames:

@@ -9,7 +9,7 @@
 <template>
   <v-dialog
     v-model="open"
-    content-class="bg-[color-mix(in_oklab,rgb(var(--v-theme-surface)),black_50%)] rounded-lg"
+    content-class="bg-surface-darken-2 rounded-lg"
     max-width="900"
     scrollable
   >

@@ -45,20 +45,24 @@
   });
 
   onMounted(async () => {
-    allCategories.value = await categoryStore.fetchCategories();
+    allCategories.value = await categoryStore.fetchPickerCategories();
   });
 
   const isDirty = computed(() => {
     if (!isEditing.value) return false;
-    if (form.title !== original.title) return true;
-    if (form.description !== original.description) return true;
+    // Compared trimmed, because the backend trims before storing — otherwise
+    // a stray trailing space would enable Save for a no-op edit.
+    if (form.title.trim() !== original.title.trim()) return true;
+    if (form.description.trim() !== original.description.trim()) return true;
     if (pickedFile.value) return true;
 
-   const a = [...form.selectedCategoryIds].sort((x, y) => x - y);
-    const b = [...original.selectedCategoryIds].sort((x, y) => x - y);
-    return (
-      a.length !== b.length || a.some((value, index) => value !== b[index])
-    );
+    // Category order is click order from the chip group, so compare as sets.
+    // The length check covers removals, which `some` alone can't detect.
+    if (form.selectedCategoryIds.length !== original.selectedCategoryIds.length)
+      return true;
+
+    const originalIds = new Set(original.selectedCategoryIds);
+    return form.selectedCategoryIds.some((id) => !originalIds.has(id));
   });
 
   const canSave = computed(
@@ -130,25 +134,30 @@
 
     const { valid } = await formRef.value!.validate();
     categoryError.value =
-      form.selectedCategoryIds.length > 0 ? "" : t("gallery.categoriesRequired");
+      form.selectedCategoryIds.length > 0
+        ? ""
+        : t("gallery.categoriesRequired");
 
     if (!valid || form.selectedCategoryIds.length === 0) return;
 
     submitting.value = true;
     try {
+      // Trimmed at submit rather than with v-model.trim, which strips the
+      // space as it is typed.
+      const title = form.title.trim();
+      const description = form.description.trim();
+
       await imageStore.updateImage(props.image.id, {
-        title: form.title,
-        description: form.description || undefined,
+        title,
+        description: description || undefined,
         selected_category_ids: form.selectedCategoryIds,
         image: pickedFile.value ?? undefined,
       });
 
-      original.title = form.title;
-      original.description = form.description;
-      original.selectedCategoryIds = [...form.selectedCategoryIds];
-      pickedFile.value = null;
-      isEditing.value = false;
+      // Closing is what resets the form: the `open` watcher runs
+      // resetEditState(), so there is no state to tidy up here.
       emit("updated");
+      close();
     } catch {
       emit("failed");
     } finally {
@@ -163,11 +172,11 @@
       <ImagePicker
         v-model="pickedFile"
         :alt="image.title"
-        :disabled="!isEditing"
+        :editable="isEditing"
         :initial-src="image.url"
       />
 
-      <TitleField v-model="form.title" :editable="isEditing" />
+      <TitleField v-model="form.title" class="mt-4" :editable="isEditing" />
 
       <v-card-text>
         <CategoriesField
@@ -190,7 +199,7 @@
           variant="elevated"
           @click="confirmingDelete = true"
         >
-          {{ t("gallery.delete") }}
+          {{ t("common.delete") }}
         </v-btn>
 
         <v-btn
@@ -199,25 +208,24 @@
           variant="elevated"
           @click="isEditing = true"
         >
-          {{ t("gallery.edit") }}
+          {{ t("common.edit") }}
         </v-btn>
 
         <div v-else class="gap-5 flex [justify-content:right]">
           <v-btn :disabled="submitting" variant="flat" @click="cancelEdit">
-            {{ t("gallery.cancel") }}
+            {{ t("common.cancel") }}
           </v-btn>
 
           <v-btn
             color="primary"
             :disabled="!canSave"
             :loading="submitting"
-            prepend-icon="mdi-content-save"
+            prepend-icon="mdi-content-save-edit"
             type="submit"
             variant="elevated"
           >
-            {{ t("gallery.save") }}
+            {{ t("common.save") }}
           </v-btn>
-
         </div>
       </v-card-actions>
     </v-form>
@@ -226,7 +234,7 @@
   <ConfirmDialog
     v-model="confirmingDelete"
     confirm-icon="mdi-delete"
-    :confirm-label="deleting ? t('gallery.deleting') : t('gallery.delete')"
+    :confirm-label="deleting ? t('common.deleting') : t('common.delete')"
     :loading="deleting"
     :message="t('gallery.deleteConfirm')"
     @confirm="destroy"

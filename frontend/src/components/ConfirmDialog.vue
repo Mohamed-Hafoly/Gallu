@@ -23,7 +23,7 @@
         <v-spacer />
 
         <v-btn :disabled="loading" @click="open = false">
-          {{ t("gallery.cancel") }}
+          {{ t("common.cancel") }}
         </v-btn>
 
         <v-btn

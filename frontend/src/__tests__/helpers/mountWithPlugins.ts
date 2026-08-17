@@ -15,6 +15,8 @@ import vuetify from "@/plugins/vuetify";
 export function mountWithPlugins<T>(
   component: T,
   options: ComponentMountingOptions<T> = {},
+  /** Seeds Pinia for components that read a store during setup. */
+  initialState?: Record<string, unknown>,
 ) {
   return mount(component, {
     ...options,
@@ -23,7 +25,7 @@ export function mountWithPlugins<T>(
       plugins: [
         vuetify,
         i18n,
-        createTestingPinia({ createSpy: vi.fn }),
+        createTestingPinia({ createSpy: vi.fn, initialState }),
         ...(options.global?.plugins ?? []),
       ],
     },

@@ -2,7 +2,7 @@
   import { useNavLinks } from "@/composables/useNavLinks";
   import TheProfileMenu from "./TheProfileMenu.vue";
 
-  const { mainLinks } = useNavLinks();
+  const { links } = useNavLinks();
 
   const drawer = defineModel<boolean | null>();
 </script>
@@ -13,13 +13,13 @@
       <v-list
         class="[&_.v-list-item-title]:tracking-wider"
         color="tertiary"
-        :items="mainLinks"
+        :items="links"
         mandatory
         nav
         rounded
       />
 
-      <the-profile-menu class="mt-auto pb-2" />
+      <the-profile-menu class="mt-auto pb-2 " />
     </div>
   </v-navigation-drawer>
 </template>

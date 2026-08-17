@@ -19,6 +19,12 @@
   const isSubmitting = ref(false);
   const authStore = useAuthStore();
 
+  // Mirrors User::DEFAULT_AVATAR_PATH — served straight from backend/public, so
+  // it resolves without a session, unlike UserResource's default_avatar_url.
+  const DEFAULT_AVATAR_URL = `${import.meta.env.VITE_API_BASE_URL}/images/default-avatar.jpg`;
+
+  const selectedAvatar = ref<File | null>(null);
+
   const formData = reactive<RegisterPayload>({
     name: "",
     email: "",
@@ -45,7 +51,14 @@
     errorMessage.value = "";
 
     try {
-      await authStore.register(formData);
+      // Trimmed at submit rather than with v-model.trim, which strips the
+      // space as it is typed. Both passwords are deliberately left untouched.
+      await authStore.register({
+        ...formData,
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        avatar: selectedAvatar.value,
+      });
     } catch (error: any) {
       errorMessage.value = error.userMessage;
     } finally {
@@ -55,9 +68,10 @@
 </script>
 
 <template>
-  <v-container class="flex items-center justify-center h-full">
+  <v-container class="flex items-center justify-center min-h-full">
+    
     <v-card
-      class="py-8 px-6 flex flex-col justify-center"
+      class="py-8 px-6 flex flex-col justify-center "
       :disabled="isSubmitting"
       max-width="480"
       rounded="lg"
@@ -77,6 +91,12 @@
           class="flex flex-col gap-6"
           @submit.prevent="register"
         >
+          <AvatarPicker
+            v-model="selectedAvatar"
+            editable
+            :initial-src="DEFAULT_AVATAR_URL"
+          />
+
           <v-text-field
             v-model="formData.name"
             :label="t('auth.name')"

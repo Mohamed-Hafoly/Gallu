@@ -70,3 +70,26 @@ describe("passwordConfirmationRules", () => {
     expect(failures(confirm, "12345678")).not.toHaveLength(0);
   });
 });
+
+describe("whitespace handling", () => {
+  it("rejects a whitespace-only name or email, matching TrimStrings", () => {
+    expect(failures(rules().nameRules, ' '.repeat(4))).not.toHaveLength(0);
+    expect(failures(rules().emailRules, ' '.repeat(4))).not.toHaveLength(0);
+  });
+
+  it("does not count padding toward the name length limits", () => {
+    // Four real characters, so minLength(4) passes despite the padding.
+    expect(failures(rules().nameRules, "  Adam  ")).toHaveLength(0);
+
+    // 255 real characters plus padding still fits maxLength(255).
+    expect(failures(rules().nameRules, `  ${"a".repeat(255)}  `)).toHaveLength(0);
+
+    // 256 real characters does not.
+    expect(failures(rules().nameRules, "a".repeat(256))).not.toHaveLength(0);
+  });
+
+  it("leaves passwords untrimmed, since the backend excludes them", () => {
+    // Six real characters plus padding is eight to the server: still valid.
+    expect(failures(rules().passwordRules, "  hunter  ")).toHaveLength(0);
+  });
+});

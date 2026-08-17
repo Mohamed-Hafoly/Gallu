@@ -33,7 +33,7 @@
   const submitting = ref(false);
 
   onMounted(async () => {
-    categories.value = await categoryStore.fetchCategories();
+    categories.value = await categoryStore.fetchPickerCategories();
   });
 
   const canSubmit = computed(() =>
@@ -69,9 +69,11 @@
 
     submitting.value = true;
     try {
+      // Trimmed at submit rather than with v-model.trim, which strips the
+      // space as it is typed.
       await imageStore.createImage({
-        title: form.title,
-        description: form.description || undefined,
+        title: form.title.trim(),
+        description: form.description.trim() || undefined,
         selected_category_ids: form.selectedCategoryIds,
         image: selectedFile.value,
       });
@@ -91,6 +93,7 @@
       <ImagePicker
         v-model="selectedFile"
         :alt="form.title || t('gallery.newImage')"
+        editable
       />
 
       <p v-if="fileError" class="ms-4 mt-1 text-caption text-error">{{ fileError }}</p>
@@ -117,11 +120,11 @@
           type="submit"
           variant="elevated"
         >
-          {{ t("gallery.create") }}
+          {{ t("common.create") }}
         </v-btn>
 
         <v-btn :disabled="submitting" variant="flat" @click="close">
-          {{ t("gallery.cancel") }}
+          {{ t("common.cancel") }}
         </v-btn>
       </v-card-actions>
     </v-form>

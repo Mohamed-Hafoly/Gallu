@@ -68,6 +68,74 @@ describe("login", () => {
   });
 });
 
+describe("register", () => {
+  const credentials = {
+    name: "Jane Doe",
+    email: "jane@example.com",
+    password: "password123",
+    password_confirmation: "password123",
+  };
+
+  /** The posted body is FormData so the optional avatar can ride along. */
+  function postedForm() {
+    return mockedApi.post.mock.calls[0][1] as FormData;
+  }
+
+  it("posts the credentials as form data after the CSRF cookie", async () => {
+    mockedApi.get.mockResolvedValue({ data: { data: user } });
+    mockedApi.post.mockResolvedValue({});
+
+    await useAuthStore().register(credentials);
+
+    expect(mockedApi.get).toHaveBeenCalledWith("/sanctum/csrf-cookie");
+    expect(mockedApi.post.mock.calls[0][0]).toBe("/api/register");
+
+    const form = postedForm();
+    expect(form).toBeInstanceOf(FormData);
+    expect(form.get("name")).toBe("Jane Doe");
+    expect(form.get("email")).toBe("jane@example.com");
+    expect(form.get("password")).toBe("password123");
+    expect(form.get("password_confirmation")).toBe("password123");
+
+    // Ordering is load-bearing: Sanctum rejects the POST without the cookie first.
+    expect(mockedApi.get.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedApi.post.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("includes the avatar when one was picked", async () => {
+    mockedApi.get.mockResolvedValue({ data: { data: user } });
+    mockedApi.post.mockResolvedValue({});
+
+    const avatar = new File(["x"], "me.jpg", { type: "image/jpeg" });
+    await useAuthStore().register({ ...credentials, avatar });
+
+    expect(postedForm().get("avatar")).toBe(avatar);
+  });
+
+  // The backend keys off isset(), so an empty avatar must be absent entirely
+  // rather than sent as an empty value.
+  it("omits the avatar entirely when none was picked", async () => {
+    mockedApi.get.mockResolvedValue({ data: { data: user } });
+    mockedApi.post.mockResolvedValue({});
+
+    await useAuthStore().register({ ...credentials, avatar: null });
+
+    expect(postedForm().has("avatar")).toBe(false);
+  });
+
+  it("populates the user and redirects home on success", async () => {
+    mockedApi.get.mockResolvedValue({ data: { data: user } });
+    mockedApi.post.mockResolvedValue({});
+
+    const store = useAuthStore();
+    await store.register(credentials);
+
+    expect(store.user).toEqual(user);
+    expect(mockedRouter.replace).toHaveBeenCalledWith({ name: "home" });
+  });
+});
+
 describe("fetchUser", () => {
   it("stores the unwrapped user from the data envelope", async () => {
     mockedApi.get.mockResolvedValue({ data: { data: user } });

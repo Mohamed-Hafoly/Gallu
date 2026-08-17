@@ -6,7 +6,7 @@
   const props = defineProps<{
     alt?: string;
     initialSrc?: string;
-    disabled?: boolean;
+    editable?: boolean;
   }>();
 
   const file = defineModel<File | null>({ default: null });
@@ -19,7 +19,7 @@
   const fileError = ref("");
 
   function pickFile() {
-    if (props.disabled) return;
+    if (!props.editable) return;
     fileInput.value?.click();
   }
 
@@ -46,19 +46,29 @@
     if (previousPicked && previewUrl.value !== props.initialSrc) {
       URL.revokeObjectURL(previewUrl.value);
     }
-    previewUrl.value = picked ? URL.createObjectURL(picked) : (props.initialSrc ?? "");
+    previewUrl.value = picked
+      ? URL.createObjectURL(picked)
+      : (props.initialSrc ?? "");
   });
+
+  // Leaving edit mode hides the picker's controls, so drop any rejection
+  // message with them rather than stranding it under nothing.
+  watch(
+    () => props.editable,
+    (isEditable) => {
+      if (!isEditable) fileError.value = "";
+    },
+  );
 </script>
 
 <template>
   <ImageStage v-if="previewUrl" :alt="alt ?? ''" :src="previewUrl" />
 
   <v-btn
-    v-if="previewUrl"
+    v-if="previewUrl && editable"
     block
     class="my-6 px-2"
     color="tertiary"
-    :disabled="disabled"
     prepend-icon="mdi-image-edit"
     variant="elevated"
     @click="pickFile"
@@ -66,8 +76,10 @@
     {{ t("gallery.changeImage") }}
   </v-btn>
 
+  <!-- Deliberately not `v-else`: with a preview but no edit mode, neither the
+       button nor this drop zone should show. -->
   <div
-    v-else
+    v-if="!previewUrl && editable"
     class="bg-primary border-2 border-dashed border-tertiary rounded-lg mx-4 my-6 h-32 flex flex-col items-center justify-center gap-2 cursor-pointer"
     role="button"
     tabindex="0"
@@ -76,7 +88,10 @@
     @keydown.space.prevent="pickFile"
   >
     <v-icon color="on-surface" icon="mdi-image-plus" size="32" />
-    <span class="text-caption text-center opacity-70">{{ t("gallery.chooseImage") }}</span>
+
+    <span class="text-caption text-center opacity-70">{{
+      t("gallery.chooseImage")
+    }}</span>
   </div>
 
   <input
@@ -87,5 +102,7 @@
     @change="onFileSelected"
   />
 
-  <p v-if="fileError" class="ms-2 mt-1 text-caption text-error">{{ fileError }}</p>
+  <p v-if="fileError" class="ms-2 mt-1 text-caption text-error">
+    {{ fileError }}
+  </p>
 </template>

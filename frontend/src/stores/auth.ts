@@ -33,9 +33,19 @@ export const useAuthStore = defineStore("auth", () => {
     email: string;
     password: string;
     password_confirmation: string;
+    avatar?: File | null;
   }) {
+    // Sent as multipart so the optional avatar can ride along. No `_method`
+    // spoofing here — unlike the profile update, this route is already POST.
+    const formData = new FormData();
+    formData.append("name", payload.name);
+    formData.append("email", payload.email);
+    formData.append("password", payload.password);
+    formData.append("password_confirmation", payload.password_confirmation);
+    if (payload.avatar) formData.append("avatar", payload.avatar);
+
     await api.get("/sanctum/csrf-cookie");
-    await api.post("/api/register", payload);
+    await api.post("/api/register", formData);
     await fetchUser();
 
     router.replace({ name: "home" });
@@ -47,8 +57,22 @@ export const useAuthStore = defineStore("auth", () => {
     router.replace({ name: "login" });
   }
 
-  async function updateProfile(payload: { name: string; email: string }) {
-    await api.put("/api/user/profile-information", payload);
+  async function updateProfile(payload: {
+    name: string;
+    email: string;
+    avatar?: File | null;
+    removeAvatar?: boolean;
+  }) {
+    // Sent as multipart so the avatar can ride along; Fortify's route is PUT,
+    // hence the method spoofing (same trick as stores/image.ts).
+    const formData = new FormData();
+    formData.append("_method", "PUT");
+    formData.append("name", payload.name);
+    formData.append("email", payload.email);
+    if (payload.avatar) formData.append("avatar", payload.avatar);
+    if (payload.removeAvatar) formData.append("remove_avatar", "1");
+
+    await api.post("/api/user/profile-information", formData);
     await fetchUser();
   }
 

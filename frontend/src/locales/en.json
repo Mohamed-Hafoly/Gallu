@@ -1,17 +1,57 @@
 {
   "common": {
-    "serverError": "Something went wrong. Please try again."
+    "serverError": "Something went wrong. Please try again.",
+    "emptyValue": "-",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleting": "Deleting…",
+    "cancel": "Cancel",
+    "save": "Save",
+    "create": "Create"
   },
   "nav": {
     "home": "Home",
     "gallery": "Gallery",
     "profile": "Profile",
-    "settings": "Settings"
+    "settings": "Settings",
+    "admin": "Admin",
+    "backToGallery": "Back to gallery",
+    "categories": "Categories",
+    "teams": "Teams",
+    "users": "Users"
+  },
+  "admin": {
+    "categories": {
+      "title": "Categories",
+      "search": "Search categories",
+      "id": "ID",
+      "nameEnglish": "Name (English)",
+      "nameArabic": "Name (عربي)",
+      "creator": "Creator",
+      "empty": "No categories yet",
+      "trashedTitle": "Pending deletion",
+      "trashedTitleNote": "These Categories will be permanently deleted after 24 hours.",
+      "trashedEmpty": "Nothing pending deletion",
+      "deletedAt": "Deleted",
+      "actions": "Actions",
+      "restore": "Restore",
+      "restored": "Category restored",
+      "restoreFailed": "Could not restore the category",
+      "add": "Add category",
+      "createTitle": "New category",
+      "created": "Category created",
+      "createFailed": "Could not create the category",
+      "editTitle": "Edit category",
+      "updated": "Category updated",
+      "updateFailed": "Could not update the category",
+      "deleteConfirm": "Delete this category? It moves to pending deletion and can be restored.",
+      "deleted": "Category deleted",
+      "deleteFailed": "Could not delete the category"
+    }
   },
   "gallery": {
     "title": "Gallery",
     "upload": "Upload Image",
-    "uploading": "Uploading…",
     "uploaded": "Image uploaded",
     "uploadFailed": "Upload failed",
     "empty": "No images yet. Upload your first one.",
@@ -20,16 +60,11 @@
     "categories": "Categories",
     "noDescription": "No description yet.",
     "noCategories": "No categories yet.",
-    "edit": "Edit",
     "editUnavailable": "Editing is not available yet.",
-    "delete": "Delete",
     "deleteConfirm": "Delete this image?",
     "deleted": "Image deleted",
     "deleteFailed": "Delete failed",
-    "deleting": "Deleting…",
-    "cancel": "Cancel",
     "close": "Close",
-    "create": "Create",
     "newImage": "New Image",
     "titleLabel": "Title",
     "titleHint": "Required, max 140 characters",
@@ -39,14 +74,14 @@
     "imageRequired": "Select an image",
     "chooseImage": "Choose an image",
     "changeImage": "Change Image",
-    "save": "Save",
     "saved": "Changes saved"
   },
   "profile": {
     "title": "Profile Information",
-    "edit": "Edit",
-    "cancel": "Cancel",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "avatar": "Profile image",
+    "changeAvatar": "Change image",
+    "removeAvatar": "Remove"
   },
   "auth": {
     "register": "Register",

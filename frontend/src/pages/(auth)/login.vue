@@ -32,7 +32,9 @@
     errorMessage.value = "";
 
     try {
-      await authStore.login(formData);
+      // Trimmed at submit rather than with v-model.trim, which strips the
+      // space as it is typed. The password is deliberately left untouched.
+      await authStore.login({ ...formData, email: formData.email.trim() });
     } catch (error: any) {
       errorMessage.value = error.userMessage;
     } finally {
@@ -42,7 +44,7 @@
 </script>
 
 <template>
-  <v-container class="flex items-center justify-center h-full">
+  <v-container class="flex items-center justify-center min-h-full">
     <v-card
       class="py-8 px-6 flex flex-col justify-center"
       :disabled="isSubmitting"

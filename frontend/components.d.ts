@@ -11,8 +11,13 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AvatarPicker: typeof import('./src/components/Profile/AvatarPicker.vue')['default']
     CategoriesField: typeof import('./src/components/Images/Fields/CategoriesField.vue')['default']
     CategoryChips: typeof import('./src/components/Images/Fields/Category/CategoryChips.vue')['default']
+    CategoryCreateDialog: typeof import('./src/components/Categories/CategoryCreateDialog.vue')['default']
+    CategoryDialog: typeof import('./src/components/Categories/CategoryDialog.vue')['default']
+    CategoryEditDialog: typeof import('./src/components/Categories/CategoryEditDialog.vue')['default']
+    CategoryNameFields: typeof import('./src/components/Categories/CategoryNameFields.vue')['default']
     CategoryPicker: typeof import('./src/components/Images/Fields/Category/CategoryPicker.vue')['default']
     ConfirmDialog: typeof import('./src/components/ConfirmDialog.vue')['default']
     DescriptionField: typeof import('./src/components/Images/Fields/DescriptionField.vue')['default']

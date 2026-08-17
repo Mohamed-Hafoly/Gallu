@@ -69,3 +69,17 @@ describe("imageFile — mirrors ImageValidationRules::image()", () => {
     expect(rules().IMAGE_MAX_BYTES).toBe(10 * 1024 * 1024);
   });
 });
+
+describe("whitespace handling", () => {
+  it("rejects a whitespace-only title, matching TrimStrings", () => {
+    expect(failures(rules().titleRules, ' '.repeat(4))).not.toHaveLength(0);
+  });
+
+  it("does not count padding toward the length limits", () => {
+    expect(failures(rules().titleRules, `  ${"a".repeat(140)}  `)).toHaveLength(0);
+    expect(failures(rules().titleRules, "a".repeat(141))).not.toHaveLength(0);
+
+    expect(failures(rules().descriptionRules, `  ${"a".repeat(400)}  `)).toHaveLength(0);
+    expect(failures(rules().descriptionRules, "a".repeat(401))).not.toHaveLength(0);
+  });
+});

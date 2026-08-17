@@ -1,17 +1,57 @@
 {
   "common": {
-    "serverError": "حدث خطأ ما. يرجى المحاولة مرة أخرى."
+    "serverError": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
+    "emptyValue": "-",
+    "edit": "تعديل",
+    "delete": "حذف",
+    "deleting": "جارٍ الحذف…",
+    "cancel": "إلغاء",
+    "save": "حفظ",
+    "create": "إنشاء"
   },
   "nav": {
     "home": "الرئيسية",
     "gallery": "المعرض",
     "profile": "الحساب",
-    "settings": "الإعدادات"
+    "settings": "الإعدادات",
+    "admin": "الإدارة",
+    "backToGallery": "العودة إلى المعرض",
+    "categories": "التصنيفات",
+    "teams": "الفرق",
+    "users": "المستخدمون"
+  },
+  "admin": {
+    "categories": {
+      "title": "التصنيفات",
+      "search": "ابحث في التصنيفات",
+      "id": "المعرّف",
+      "nameEnglish": "الأسم (English)",
+      "nameArabic": "الأسم (عربي)",
+      "creator": "المنشئ",
+      "empty": "لا توجد تصنيفات بعد",
+      "trashedTitle": "في انتظار الحذف",
+      "trashedTitleNote": "سيتم حذف هذه التصنيفات نهائيًا بعد 24 ساعة.",
+      "trashedEmpty": "لا توجد تصنيفات في انتظار الحذف",
+      "deletedAt": "تاريخ الحذف",
+      "actions": "الإجراءات",
+      "restore": "استعادة",
+      "restored": "تمت استعادة التصنيف",
+      "restoreFailed": "تعذّرت استعادة التصنيف",
+      "add": "إضافة تصنيف",
+      "createTitle": "تصنيف جديد",
+      "created": "تم إنشاء التصنيف",
+      "createFailed": "تعذّر إنشاء التصنيف",
+      "editTitle": "تعديل التصنيف",
+      "updated": "تم تحديث التصنيف",
+      "updateFailed": "تعذّر تحديث التصنيف",
+      "deleteConfirm": "حذف هذا التصنيف؟ سينتقل إلى قائمة الانتظار ويمكن استعادته.",
+      "deleted": "تم حذف التصنيف",
+      "deleteFailed": "تعذّر حذف التصنيف"
+    }
   },
   "gallery": {
     "title": "المعرض",
     "upload": "إرفع صورة",
-    "uploading": "جارٍ الرفع…",
     "uploaded": "تم رفع الصورة",
     "uploadFailed": "فشل رفع الصورة",
     "empty": "لا توجد صور بعد. ارفع أول صورة لك.",
@@ -20,16 +60,11 @@
     "categories": "التصنيفات",
     "noDescription": "لا يوجد وصف بعد.",
     "noCategories": "لا توجد تصنيفات بعد.",
-    "edit": "تعديل",
     "editUnavailable": "التعديل غير متاح بعد.",
-    "delete": "حذف",
     "deleteConfirm": " حذف هذه الصورة؟",
     "deleted": "تم حذف الصورة",
     "deleteFailed": "فشل حذف الصورة",
-    "deleting": "جارٍ الحذف…",
-    "cancel": "إلغاء",
     "close": "إغلاق",
-    "create": "إنشاء",
     "newImage": "صورة جديدة",
     "titleLabel": "العنوان",
     "titleHint": "مطلوب ، بحد أقصى 140 حرفًا",
@@ -39,14 +74,14 @@
     "imageRequired": "إختر صورة",
     "chooseImage": "إختر صورة",
     "changeImage": "تغيير الصورة",
-    "save": "حفظ",
     "saved": "تم حفظ التغييرات"
   },
   "profile": {
     "title": "معلومات الحساب",
-    "edit": "تعديل",
-    "cancel": "إلغاء",
-    "confirm": "تأكيد"
+    "confirm": "تأكيد",
+    "avatar": "صورة الحساب",
+    "changeAvatar": "تغيير الصورة",
+    "removeAvatar": "إزالة"
   },
   "auth": {
     "register": "إنشاء حساب",
