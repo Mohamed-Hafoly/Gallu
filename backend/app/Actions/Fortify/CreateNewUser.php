@@ -3,6 +3,7 @@
 namespace App\Actions\Fortify;
 
 use App\Models\User;
+use App\Rules\ImageValidationRules;
 use App\Rules\UserValidationRules;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -16,7 +17,10 @@ class CreateNewUser implements CreatesNewUsers
     /**
      * Validate and create a newly registered user.
      *
-     * @param  array<string, string>  $input
+     * The SPA posts this as multipart, so `$input` may carry an optional
+     * `avatar` UploadedFile alongside the plain fields.
+     *
+     * @param  array<string, mixed>  $input
      *
      * @throws ValidationException
      */
@@ -26,12 +30,19 @@ class CreateNewUser implements CreatesNewUsers
             'name' => UserValidationRules::name(),
             'email' => UserValidationRules::email(),
             'password' => $this->passwordRules(),
+            'avatar' => ImageValidationRules::image(required: false),
         ])->validate();
 
-        return User::create([
+        $user = User::create([
             'name' => $input['name'],
             'email' => $input['email'],
             'password' => Hash::make($input['password']),
         ]);
+
+        if (isset($input['avatar'])) {
+            $user->setAvatarFromFile($input['avatar']);
+        }
+
+        return $user;
     }
 }

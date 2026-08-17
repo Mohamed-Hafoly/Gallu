@@ -24,13 +24,42 @@ it('lists all categories', function () {
         ->assertJsonStructure(['data' => [['id', 'name_en', 'name_ar']]]);
 });
 
-it('excludes soft-deleted categories from the listing', function () {
+// The admin screen needs the trashed rows to populate its "pending deletion"
+// table. The picker endpoint is the one that filters them out.
+it('includes soft-deleted categories in the listing', function () {
     $user = User::factory()->create();
     Category::factory()->count(2)->create();
     Category::factory()->create()->delete();
 
+    $response = actingAs($user)
+        ->getJson('/api/categories')
+        ->assertOk()
+        ->assertJsonCount(3, 'data');
+
+    expect(collect($response->json('data'))->whereNotNull('deleted_at'))->toHaveCount(1);
+});
+
+it('exposes the name of the user who created the category', function () {
+    $user = User::factory()->create();
+    $creator = User::factory()->create(['name' => 'Ada Lovelace']);
+    Category::factory()->for($creator)->create();
+
     actingAs($user)
         ->getJson('/api/categories')
         ->assertOk()
-        ->assertJsonCount(2, 'data');
+        ->assertJsonPath('data.0.creator', 'Ada Lovelace');
+});
+
+it('still lists a category whose creator was deleted, with a null creator', function () {
+    $user = User::factory()->create();
+    $creator = User::factory()->create();
+    Category::factory()->for($creator)->create();
+
+    $creator->delete();
+
+    actingAs($user)
+        ->getJson('/api/categories')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.creator', null);
 });

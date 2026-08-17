@@ -15,6 +15,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/images/{image}', [ImageController::class, 'destroy']);
 
     Route::get('/categories', [CategoryController::class, 'index']);
+    Route::get('/categories/picker', [CategoryController::class, 'picker']);
+    Route::post('/categories', [CategoryController::class, 'store']);
+    Route::patch('/categories/{category}', [CategoryController::class, 'update']);
+    Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
+    Route::post('/categories/{category}/restore', [CategoryController::class, 'restore'])->withTrashed();
 
     Route::get('/gallery', fn () => 'hellp');
     Route::get('/profile', fn () => 'hellp');

@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Category;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -43,6 +44,7 @@ class CategoryFactory extends Factory
         $pair = fake()->unique()->randomElement($names);
 
         return [
+            'user_id' => User::factory(),
             'name_en' => $pair['en'],
             'name_ar' => $pair['ar'],
         ];

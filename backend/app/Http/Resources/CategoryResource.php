@@ -22,6 +22,8 @@ class CategoryResource extends JsonResource
             'id' => $this->id,
             'name_en' => $this->name_en,
             'name_ar' => $this->name_ar,
+            'creator' => $this->whenLoaded('user', fn () => $this->user?->name),
+            'deleted_at' => $this->deleted_at,
         ];
     }
 }
