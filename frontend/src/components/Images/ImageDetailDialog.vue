@@ -6,6 +6,7 @@
   import { useI18n } from "vue-i18n";
   import { useCategoryStore } from "@/stores/category";
   import { useImageStore } from "@/stores/image";
+  import { useNotifierStore } from "@/stores/notifier";
 
   const props = defineProps<{
     image: Image | null;
@@ -14,7 +15,6 @@
   const emit = defineEmits<{
     deleted: [id: number];
     updated: [];
-    failed: [];
   }>();
 
   const open = defineModel<boolean>({ default: false });
@@ -22,6 +22,7 @@
   const { t } = useI18n();
   const categoryStore = useCategoryStore();
   const imageStore = useImageStore();
+  const notifier = useNotifierStore();
 
   const confirmingDelete = ref(false);
   const deleting = ref(false);
@@ -113,7 +114,7 @@
       emit("deleted", props.image.id);
       close();
     } catch {
-      emit("failed");
+      notifier.notify(t("gallery.deleteFailed"), "error");
     } finally {
       deleting.value = false;
       confirmingDelete.value = false;
@@ -159,7 +160,9 @@
       emit("updated");
       close();
     } catch {
-      emit("failed");
+      // Distinct from the delete message above — the page previously reported
+      // both through one `failed` event, so an edit failure said "delete failed".
+      notifier.notify(t("gallery.updateFailed"), "error");
     } finally {
       submitting.value = false;
     }

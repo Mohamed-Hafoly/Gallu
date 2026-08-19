@@ -4,17 +4,16 @@
   import { useI18n } from "vue-i18n";
   import { useRtl } from "vuetify";
   import { useImageStore } from "@/stores/image";
+  import { useNotifierStore } from "@/stores/notifier";
 
   const { t } = useI18n();
   const {
     isRtl } = useRtl();
   const imageStore = useImageStore();
+  const notifier = useNotifierStore();
 
   const images = ref<Image[]>([]);
   const loading = ref(true);
-  const snackbar = ref(false);
-  const message = ref("");
-  const messageColor = ref<"success" | "error">("success");
   const selectedImage = ref<Image | null>(null);
   const detailOpen = ref(false);
   const createOpen = ref(false);
@@ -26,13 +25,7 @@
 
   function onDeleted(id: number) {
     images.value = images.value.filter(image => image.id !== id);
-    notify(t("gallery.deleted"));
-  }
-
-  function notify(text: string, color: "success" | "error" = "success") {
-    message.value = text;
-    messageColor.value = color;
-    snackbar.value = true;
+    notifier.notify(t("gallery.deleted"));
   }
 
   async function fetchImages() {
@@ -45,12 +38,12 @@
   }
 
   async function onCreated() {
-    notify(t("gallery.uploaded"));
+    notifier.notify(t("gallery.uploaded"));
     await fetchImages();
   }
 
   async function onUpdated() {
-    notify(t("gallery.saved"));
+    notifier.notify(t("gallery.saved"));
     await fetchImages();
   }
 
@@ -135,19 +128,10 @@
       v-model="detailOpen"
       :image="selectedImage"
       @deleted="onDeleted"
-      @failed="notify(t('gallery.deleteFailed'), 'error')"
       @updated="onUpdated"
     />
 
-    <ImageCreateDialog
-      v-model="createOpen"
-      @created="onCreated"
-      @failed="notify(t('gallery.uploadFailed'), 'error')"
-    />
-
-    <v-snackbar v-model="snackbar" :color="messageColor" :timeout="4000">
-      {{ message }}
-    </v-snackbar>
+    <ImageCreateDialog v-model="createOpen" @created="onCreated" />
   </v-container>
 </template>
 

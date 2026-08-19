@@ -1,11 +1,13 @@
 <script setup lang="ts">
   import { computed, ref } from "vue";
   import { useI18n } from "vue-i18n";
+  import { useEmailFormat } from "@/composables/useEmailFormat";
   import { useNavLinks } from "@/composables/useNavLinks";
   import { useAuthStore } from "@/stores/auth";
 
   const { profileLink } = useNavLinks();
   const { t } = useI18n();
+  const { truncateEmail } = useEmailFormat();
   const authStore = useAuthStore();
 
   const name = computed(() => authStore.user?.name ?? "");
@@ -33,14 +35,22 @@
             </template>
 
             <template #title>
-              <p class="text-base text-start">
+              <p
+                class="text-base text-start truncate max-w-[18ch]"
+                dir="auto"
+                :title="name"
+              >
                 {{ name }}
               </p>
             </template>
 
             <template #subtitle>
-              <p class="text-sm text-start">
-                {{ email }}
+              <p
+                class="text-sm text-start truncate max-w-[18ch]"
+                dir="auto"
+                :title="email"
+              >
+                {{ truncateEmail(email, 18) }}
               </p>
             </template>
 
@@ -51,13 +61,29 @@
         </v-card>
       </template>
 
-      <v-card min-width="300">
+      <v-card class="py-2" min-width="300">
         <v-list>
-          <v-list-item :subtitle="email" :title="name">
+          <v-list-item>
             <template #prepend>
               <v-avatar size="40">
                 <v-img :alt="name" cover :src="avatarUrl" />
               </v-avatar>
+            </template>
+
+            <template #title>
+              <p
+                class="text-start truncate max-w-[22ch]"
+                dir="auto"
+                :title="name"
+              >
+                {{ name }}
+              </p>
+            </template>
+
+            <template #subtitle>
+              <p class="text-start truncate" :title="email">
+                {{ truncateEmail(email, 22) }}
+              </p>
             </template>
           </v-list-item>
         </v-list>
@@ -66,10 +92,14 @@
 
         <v-list nav rounded>
           <v-list-item
+            class="[--v-list-prepend-gap:14px]"
+            slim
             v-bind="profileLink.props"
-            :title="profileLink.title"
-            @click="menu = false"
-          />
+          >
+            <template #title>
+              <span class="tracking-wider">{{ profileLink.title }}</span>
+            </template>
+          </v-list-item>
         </v-list>
 
         <v-card-actions>
@@ -79,6 +109,9 @@
             prepend-icon="mdi-logout"
             @click="logout()"
           >
+            <template #loader>
+              <v-progress-circular color="tertiary" indeterminate width="3" />
+            </template>
             {{ t("auth.logout") }}
           </v-btn>
         </v-card-actions>

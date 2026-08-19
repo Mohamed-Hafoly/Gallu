@@ -39,6 +39,8 @@
       "restoreFailed": "Could not restore the category",
       "add": "Add category",
       "createTitle": "New category",
+      "createdAt": "Created",
+      "updatedAt": "Last updated",
       "created": "Category created",
       "createFailed": "Could not create the category",
       "editTitle": "Edit category",
@@ -46,7 +48,46 @@
       "updateFailed": "Could not update the category",
       "deleteConfirm": "Delete this category? It moves to pending deletion and can be restored.",
       "deleted": "Category deleted",
-      "deleteFailed": "Could not delete the category"
+      "deleteFailed": "Could not delete the category",
+      "deleteSelected": "Delete selected ({count})",
+      "restoreSelected": "Restore selected ({count})",
+      "bulkDeleteConfirm": "Delete the selected categories ({count})? They move to pending deletion and can be restored.",
+      "bulkDeleted": "Selected categories deleted ({count})",
+      "bulkDeleteFailed": "Some categories could not be deleted ({count})",
+      "bulkRestored": "Selected categories restored ({count})",
+      "bulkRestoreFailed": "Some categories could not be restored ({count})"
+    },
+    "users": {
+      "title": "Users",
+      "search": "Search users",
+      "id": "ID",
+      "avatar": "Profile",
+      "name": "Name",
+      "email": "Email",
+      "createdAt": "Created",
+      "updatedAt": "Last updated",
+      "actions": "Actions",
+      "empty": "No users found",
+      "editTitle": "Edit user",
+      "updated": "User updated",
+      "updateFailed": "Could not update the user",
+      "deleteConfirm": "Delete {name}? This user will be permanently deleted.",
+      "deleted": "User deleted",
+      "deleteFailed": "Could not delete the user",
+      "role": "Role",
+      "roles": {
+        "super-admin": "Admin",
+        "admin": "Team admin",
+        "member": "User"
+      },
+      "deleteSelected": "Delete selected ({count})",
+      "bulkDeleteConfirm": "Delete the selected users ({count})? They will be permanently deleted.",
+      "bulkDeleted": "Selected users deleted ({count})",
+      "bulkDeleteFailed": "Some users could not be deleted ({count})",
+      "add": "Add user",
+      "createTitle": "New user",
+      "created": "User created",
+      "createFailed": "Could not create the user"
     }
   },
   "gallery": {
@@ -64,6 +105,7 @@
     "deleteConfirm": "Delete this image?",
     "deleted": "Image deleted",
     "deleteFailed": "Delete failed",
+    "updateFailed": "Could not save your changes",
     "close": "Close",
     "newImage": "New Image",
     "titleLabel": "Title",
@@ -79,6 +121,8 @@
   "profile": {
     "title": "Profile Information",
     "confirm": "Confirm",
+    "updated": "Profile updated",
+    "updateFailed": "Could not update your profile",
     "avatar": "Profile image",
     "changeAvatar": "Change image",
     "removeAvatar": "Remove"

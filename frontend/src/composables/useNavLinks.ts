@@ -1,10 +1,12 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
+import { useAuthStore } from "@/stores/auth";
 
 export function useNavLinks() {
   const { t } = useI18n();
   const route = useRoute();
+  const authStore = useAuthStore();
 
   const mainLinks = computed(() => [
     {
@@ -26,17 +28,20 @@ export function useNavLinks() {
       value: "/settings",
       props: { to: { name: "settings" }, prependIcon: "mdi-cog" },
     },
-    // TODO: only super-admins should see this. The backend has no role column
-    // yet (UserResource returns id/name/email), so for now it shows for every
-    // signed-in user; filter here once the role reaches the User type.
-    {
-      title: t("nav.admin"),
-      value: "/admin/categories",
-      props: {
-        to: { name: "admin-categories" },
-        prependIcon: "mdi-shield-account",
-      },
-    },
+    // Hidden from everyone but super-admins. Cosmetic only — route paths ship
+    // in the bundle either way; the backend policies are the real enforcement.
+    ...(authStore.user?.is_super_admin
+      ? [
+          {
+            title: t("nav.admin"),
+            value: "/admin/users",
+            props: {
+              to: { name: "admin-users" },
+              prependIcon: "mdi-shield-account",
+            },
+          },
+        ]
+      : []),
   ]);
 
   const adminLinks = computed(() => [
@@ -46,9 +51,12 @@ export function useNavLinks() {
       props: { to: { name: "gallery" }, prependIcon: "mdi-arrow-left" },
     },
     {
-      title: t("nav.categories"),
-      value: "/admin/categories",
-      props: { to: { name: "admin-categories" }, prependIcon: "mdi-pentagram" },
+      title: t("nav.users"),
+      value: "/admin/users",
+      props: {
+        to: { name: "admin-users" },
+        prependIcon: "mdi-account-multiple",
+      },
     },
     {
       title: t("nav.teams"),
@@ -56,11 +64,11 @@ export function useNavLinks() {
       props: { to: { name: "admin-teams" }, prependIcon: "mdi-account-group" },
     },
     {
-      title: t("nav.users"),
-      value: "/admin/users",
+      title: t("nav.categories"),
+      value: "/admin/categories",
       props: {
-        to: { name: "admin-users" },
-        prependIcon: "mdi-account-multiple",
+        to: { name: "admin-categories" },
+        prependIcon: "mdi-shape-plus",
       },
     },
   ]);

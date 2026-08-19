@@ -27,9 +27,10 @@ function nameInputs() {
   return { english: inputs[2], arabic: inputs[3] };
 }
 
+/** Found by role rather than icon, so swapping the icon can't break the spec. */
 function saveButton() {
-  return [...document.body.querySelectorAll("button")].find((b) =>
-    b.querySelector(".mdi-content-save"),
+  return document.body.querySelector(
+    "button[type='submit']",
   ) as HTMLButtonElement;
 }
 

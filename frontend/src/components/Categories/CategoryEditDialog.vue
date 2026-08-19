@@ -3,19 +3,23 @@
   import type { VForm } from "vuetify/components";
   import { computed, reactive, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
+  import { useDateFormat } from "@/composables/useDateFormat";
   import { useCategoryStore } from "@/stores/category";
+  import { useNotifierStore } from "@/stores/notifier";
 
   const props = defineProps<{ category: Category }>();
 
+  const { formatDateTime } = useDateFormat();
+
   const emit = defineEmits<{
     updated: [];
-    failed: [];
   }>();
 
   const open = defineModel<boolean>({ default: false });
 
   const { t } = useI18n();
   const categoryStore = useCategoryStore();
+  const notifier = useNotifierStore();
 
   const formRef = ref<VForm | null>(null);
   const formValid = ref<boolean | null>(null);
@@ -82,7 +86,7 @@
       emit("updated");
       close();
     } catch {
-      emit("failed");
+      notifier.notify(t("admin.categories.updateFailed"), "error");
     } finally {
       submitting.value = false;
     }
@@ -90,7 +94,7 @@
 </script>
 
 <template>
-  <CategoryDialog v-model="open" :title="t('admin.categories.editTitle')">
+  <FormDialog v-model="open" :title="t('admin.categories.editTitle')">
     <v-form ref="formRef" v-model="formValid" @submit.prevent="submit">
       <v-card-text class="flex flex-col gap-6">
         <v-text-field
@@ -109,6 +113,18 @@
           v-model:name-ar="form.name_ar"
           v-model:name-en="form.name_en"
         />
+
+        <v-text-field
+          disabled
+          :label="t('admin.categories.createdAt')"
+          :model-value="formatDateTime(category.created_at)"
+        />
+
+        <v-text-field
+          disabled
+          :label="t('admin.categories.updatedAt')"
+          :model-value="formatDateTime(category.updated_at)"
+        />
       </v-card-text>
 
       <v-card-actions>
@@ -126,9 +142,12 @@
           type="submit"
           variant="elevated"
         >
+          <template #loader>
+            <v-progress-circular color="tertiary" indeterminate width="3" />
+          </template>
           {{ t("common.save") }}
         </v-btn>
       </v-card-actions>
     </v-form>
-  </CategoryDialog>
+  </FormDialog>
 </template>

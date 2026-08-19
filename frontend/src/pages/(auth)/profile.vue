@@ -3,7 +3,9 @@
   import { computed, reactive, ref } from "vue";
   import { useI18n } from "vue-i18n";
   import { useAuthValidationRules } from "@/composables/useAuthValidationRules";
+  import { useEmailFormat } from "@/composables/useEmailFormat";
   import { useAuthStore } from "@/stores/auth";
+  import { useNotifierStore } from "@/stores/notifier";
 
   interface UpdatePayload {
     name: string;
@@ -12,6 +14,7 @@
 
   const { t } = useI18n();
   const { nameRules, emailRules } = useAuthValidationRules();
+  const { truncateEmail } = useEmailFormat();
   const isSubmitting = ref(false);
   const isEditing = ref(false);
   const authStore = useAuthStore();
@@ -32,7 +35,7 @@
 
   const formRef = ref<VForm | null>(null);
   const formValid = ref<boolean | null>(null);
-  const errorMessage = ref("");
+  const notifier = useNotifierStore();
 
   // While a removal is pending we preview the default image, since that is
   // what saving would leave the user with.
@@ -40,6 +43,10 @@
     removeAvatar.value
       ? currentUser.value.default_avatar_url
       : currentUser.value.avatar_url,
+  );
+
+  const displayEmail = computed(() =>
+    isEditing.value ? formData.email : truncateEmail(formData.email, 30),
   );
 
   const isDirty = computed(() => {
@@ -67,7 +74,6 @@
 
     resetAvatarState();
     formRef.value?.resetValidation();
-    errorMessage.value = "";
     isEditing.value = false;
   }
 
@@ -76,7 +82,6 @@
     if (!valid || !isDirty.value) return;
 
     isSubmitting.value = true;
-    errorMessage.value = "";
 
     try {
       // Trimmed at submit rather than with v-model.trim, which strips the
@@ -96,8 +101,9 @@
 
       resetAvatarState();
       isEditing.value = false;
-    } catch (error: any) {
-      errorMessage.value = error.userMessage;
+      notifier.notify(t("profile.updated"));
+    } catch {
+      notifier.notify(t("profile.updateFailed"), "error");
     } finally {
       isSubmitting.value = false;
     }
@@ -117,10 +123,6 @@
         {{ t("profile.title") }}
       </v-card-title>
 
-      <v-alert v-if="errorMessage" class="mb-4" type="error">{{
-        errorMessage
-      }}</v-alert>
-
       <v-card-text>
         <v-form
           ref="formRef"
@@ -136,19 +138,27 @@
             @remove="removeAvatar = true"
           />
 
+          <!-- text-overflow works on a non-focused input, so the name needs no
+               value substitution — only the CSS. -->
           <v-text-field
             v-model="formData.name"
+            class="[&_input]:truncate"
+            dir="auto"
             :disabled="!isEditing"
             :label="t('auth.name')"
             :rules="nameRules"
           />
 
           <v-text-field
-            v-model="formData.email"
+            class="[&_input]:truncate"
+            dir="auto"
             :disabled="!isEditing"
             :label="t('auth.email')"
+            :model-value="displayEmail"
             :rules="emailRules"
+            :title="formData.email"
             type="email"
+            @update:model-value="(value) => (formData.email = value)"
           />
 
           <v-btn
@@ -177,6 +187,9 @@
               :loading="isSubmitting"
               type="submit"
             >
+              <template #loader>
+                <v-progress-circular color="tertiary" indeterminate width="3" />
+              </template>
               {{ t("profile.confirm") }}
             </v-btn>
           </div>

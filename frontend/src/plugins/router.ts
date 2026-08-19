@@ -12,7 +12,7 @@ import { useAuthStore } from "@/stores/auth";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes,
+  routes: [...routes],
 });
 if (import.meta.hot) {
   handleHotUpdate(router);
@@ -27,6 +27,7 @@ const publicRoutes = new Set(["login", "register"]);
  */
 export function authGuard(to: {
   name?: RouteRecordNameGeneric;
+  path?: string;
 }): RouteLocationRaw | undefined {
   const authStore = useAuthStore();
 
@@ -35,6 +36,12 @@ export function authGuard(to: {
   }
 
   if (authStore.user && publicRoutes.has(to.name as string)) {
+    return { name: "home" };
+  }
+
+  // Defence in depth only: the paths are in the bundle and this runs in the
+  // visitor's own browser. The backend policies are what actually deny.
+  if (to.path?.startsWith("/admin") && !authStore.user?.is_super_admin) {
     return { name: "home" };
   }
 }

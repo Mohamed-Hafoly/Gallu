@@ -69,9 +69,8 @@
 
 <template>
   <v-container class="flex items-center justify-center min-h-full">
-    
     <v-card
-      class="py-8 px-6 flex flex-col justify-center "
+      class="py-8 px-6 flex flex-col justify-center"
       :disabled="isSubmitting"
       max-width="480"
       rounded="lg"
@@ -133,8 +132,14 @@
             color="primary"
             :loading="isSubmitting ? 'tertiary' : false"
             type="submit"
-            >{{ t("auth.register") }}</v-btn
-          >
+            >{{ t("auth.register") }}
+            <template #loader>
+              <v-progress-circular
+                color="tertiary"
+                indeterminate
+                width="3"
+              /> </template
+          ></v-btn>
 
           <p class="text-center text-base mt-6">
             {{ t("auth.registerToLogin") }}

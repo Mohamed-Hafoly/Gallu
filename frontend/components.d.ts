@@ -21,6 +21,7 @@ declare module 'vue' {
     CategoryPicker: typeof import('./src/components/Images/Fields/Category/CategoryPicker.vue')['default']
     ConfirmDialog: typeof import('./src/components/ConfirmDialog.vue')['default']
     DescriptionField: typeof import('./src/components/Images/Fields/DescriptionField.vue')['default']
+    FormDialog: typeof import('./src/components/FormDialog.vue')['default']
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     ImageCreateDialog: typeof import('./src/components/Images/ImageCreateDialog.vue')['default']
     ImageDetailDialog: typeof import('./src/components/Images/ImageDetailDialog.vue')['default']
@@ -33,5 +34,8 @@ declare module 'vue' {
     TheNav: typeof import('./src/components/TheNav.vue')['default']
     TheProfileMenu: typeof import('./src/components/TheProfileMenu.vue')['default']
     TitleField: typeof import('./src/components/Images/Fields/TitleField.vue')['default']
+    UserCreateDialog: typeof import('./src/components/Users/UserCreateDialog.vue')['default']
+    UserEditDialog: typeof import('./src/components/Users/UserEditDialog.vue')['default']
+    UserFields: typeof import('./src/components/Users/UserFields.vue')['default']
   }
 }

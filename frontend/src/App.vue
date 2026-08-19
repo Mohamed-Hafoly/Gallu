@@ -2,7 +2,9 @@
   import { computed, ref } from "vue";
   import { useRoute } from "vue-router";
   import { useDisplay } from "vuetify";
+  import { useNotifierStore } from "@/stores/notifier";
 
+  const notifier = useNotifierStore();
   const { mobile } = useDisplay();
   const drawer = ref<boolean | null>(null);
 
@@ -28,5 +30,15 @@
         <router-view />
       </div>
     </v-main>
+
+    <!-- The one snackbar for the whole app; anything can raise it through the
+         notifier store rather than emitting up to a page. -->
+    <v-snackbar
+      v-model="notifier.visible"
+      :color="notifier.tone"
+      :timeout="4000"
+    >
+      {{ notifier.message }}
+    </v-snackbar>
   </v-app>
 </template>

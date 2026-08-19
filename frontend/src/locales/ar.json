@@ -33,6 +33,8 @@
       "trashedTitleNote": "سيتم حذف هذه التصنيفات نهائيًا بعد 24 ساعة.",
       "trashedEmpty": "لا توجد تصنيفات في انتظار الحذف",
       "deletedAt": "تاريخ الحذف",
+      "createdAt": "تاريخ الإنشاء",
+      "updatedAt": "آخر تحديث",
       "actions": "الإجراءات",
       "restore": "استعادة",
       "restored": "تمت استعادة التصنيف",
@@ -46,7 +48,46 @@
       "updateFailed": "تعذّر تحديث التصنيف",
       "deleteConfirm": "حذف هذا التصنيف؟ سينتقل إلى قائمة الانتظار ويمكن استعادته.",
       "deleted": "تم حذف التصنيف",
-      "deleteFailed": "تعذّر حذف التصنيف"
+      "deleteFailed": "تعذّر حذف التصنيف",
+      "deleteSelected": "حذف المحدد ({count})",
+      "restoreSelected": "استعادة المحدد ({count})",
+      "bulkDeleteConfirm": "حذف التصنيفات المحددة ({count})؟ ستنتقل إلى قائمة الانتظار ويمكن استعادتها.",
+      "bulkDeleted": "تم حذف التصنيفات المحددة ({count})",
+      "bulkDeleteFailed": "تعذّر حذف بعض التصنيفات ({count})",
+      "bulkRestored": "تمت استعادة التصنيفات المحددة ({count})",
+      "bulkRestoreFailed": "تعذّرت استعادة بعض التصنيفات ({count})"
+    },
+    "users": {
+      "title": "المستخدمون",
+      "search": "ابحث عن مستخدم",
+      "id": "المعرّف",
+      "avatar": "الصورة الشخصية",
+      "name": "الاسم",
+      "email": "البريد الإلكتروني",
+      "createdAt": "تاريخ الإنشاء",
+      "updatedAt": "آخر تحديث",
+      "actions": "الإجراءات",
+      "empty": "لا يوجد مستخدمون",
+      "editTitle": "تعديل المستخدم",
+      "updated": "تم تحديث المستخدم",
+      "updateFailed": "تعذّر تحديث المستخدم",
+      "deleteConfirm": "حذف {name}؟ سيتم حذف هذا المستخدم نهائيًا.",
+      "deleted": "تم حذف المستخدم",
+      "deleteFailed": "تعذّر حذف المستخدم",
+      "role": "الدور",
+      "roles": {
+        "super-admin": "مدير",
+        "admin": "مدير فريق",
+        "member": "مستخدم"
+      },
+      "deleteSelected": "حذف المحدد ({count})",
+      "bulkDeleteConfirm": "حذف المستخدمين المحددين ({count})؟ سيتم حذفهم نهائيًا.",
+      "bulkDeleted": "تم حذف المستخدمين المحددين ({count})",
+      "bulkDeleteFailed": "تعذّر حذف بعض المستخدمين ({count})",
+      "add": "إضافة مستخدم",
+      "createTitle": "مستخدم جديد",
+      "created": "تم إنشاء المستخدم",
+      "createFailed": "تعذّر إنشاء المستخدم"
     }
   },
   "gallery": {
@@ -64,6 +105,7 @@
     "deleteConfirm": " حذف هذه الصورة؟",
     "deleted": "تم حذف الصورة",
     "deleteFailed": "فشل حذف الصورة",
+    "updateFailed": "تعذّر حفظ التغييرات",
     "close": "إغلاق",
     "newImage": "صورة جديدة",
     "titleLabel": "العنوان",
@@ -79,6 +121,8 @@
   "profile": {
     "title": "معلومات الحساب",
     "confirm": "تأكيد",
+    "updated": "تم تحديث الحساب",
+    "updateFailed": "تعذّر تحديث الحساب",
     "avatar": "صورة الحساب",
     "changeAvatar": "تغيير الصورة",
     "removeAvatar": "إزالة"
@@ -91,7 +135,6 @@
     "email": "البريد الإلكتروني",
     "password": "كلمة المرور",
     "passwordHint": "كلمة السر يجب أن تتكون من 8 أحرف على الأقل",
-
     "confirmPassword": "تأكيد كلمة المرور",
     "forgotPassword": "نسيت كلمة المرور؟",
     "resetPassword": "إعادة تعيين كلمة المرور",

@@ -9,4 +9,12 @@ export interface User {
   has_avatar: boolean;
   /** What the avatar reverts to — previewed while a removal is pending. */
   default_avatar_url: string;
+  created_at: string;
+  updated_at: string;
+  /** Gates the admin nav entry and the /admin routes. Backed by a real policy
+   * on the server — this only keeps the UI honest. */
+  is_super_admin: boolean;
+  /** Presentation of the same fact, labelled through admin.users.roles.*.
+   * Binary until teams exist, when a team admin resolves to "admin". */
+  role: "super-admin" | "admin" | "member";
 }

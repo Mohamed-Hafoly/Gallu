@@ -73,6 +73,9 @@
     variant="elevated"
     @click="pickFile"
   >
+    <template #loader>
+      <v-progress-circular color="tertiary" indeterminate width="3" />
+    </template>
     {{ t("gallery.changeImage") }}
   </v-btn>
 

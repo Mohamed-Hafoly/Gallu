@@ -1,0 +1,97 @@
+import type { User } from "@/types/user";
+import { defineStore } from "pinia";
+import api from "@/plugins/axios";
+
+/** What the admin table's `@update:options` maps onto. */
+export interface UserListParams {
+  page: number;
+  per_page: number;
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
+  search?: string;
+}
+
+export interface UserPage {
+  items: User[];
+  total: number;
+}
+
+export interface CreateUserPayload {
+  name: string;
+  email: string;
+  password: string;
+  passwordConfirmation: string;
+  isSuperAdmin: boolean;
+  /** Optional, exactly as on registration. */
+  avatar?: File | null;
+}
+
+export interface UpdateUserPayload {
+  name: string;
+  email: string;
+  avatar?: File | null;
+  removeAvatar?: boolean;
+  /** Promote or demote. Left undefined when editing yourself — the backend
+   * refuses to let a super-admin change their own flag. */
+  isSuperAdmin?: boolean;
+}
+
+export const useUserStore = defineStore("user", () => {
+  /**
+   * One page of the admin listing. Unlike the categories store this does not
+   * fetch everything — paging, sorting and searching all happen server-side, so
+   * the total has to come back alongside the rows for the table's footer.
+   */
+  async function fetchUsers(params: UserListParams): Promise<UserPage> {
+    const { data } = await api.get("/api/users", { params });
+
+    return { items: data.data as User[], total: data.meta.total as number };
+  }
+
+  /**
+   * Multipart so the optional avatar can ride along — but with no `_method`
+   * spoofing, unlike updateUser: this route is already POST.
+   */
+  async function createUser(payload: CreateUserPayload) {
+    const formData = new FormData();
+    formData.append("name", payload.name);
+    formData.append("email", payload.email);
+    formData.append("password", payload.password);
+    formData.append("password_confirmation", payload.passwordConfirmation);
+    formData.append("is_super_admin", payload.isSuperAdmin ? "1" : "0");
+    if (payload.avatar) formData.append("avatar", payload.avatar);
+
+    const { data } = await api.post("/api/users", formData);
+    return data.data as User;
+  }
+
+  /**
+   * Name, email, avatar and the super-admin flag are editable; the id and both
+   * timestamps are rendered disabled and the backend ignores them.
+   *
+   * Sent as multipart so the avatar can ride along, hence the `_method`
+   * spoofing over a POST — same trick as stores/image.ts.
+   */
+  async function updateUser(id: number, payload: UpdateUserPayload) {
+    const formData = new FormData();
+    formData.append("_method", "PATCH");
+    formData.append("name", payload.name);
+    formData.append("email", payload.email);
+    if (payload.avatar) formData.append("avatar", payload.avatar);
+    if (payload.removeAvatar) formData.append("remove_avatar", "1");
+    // Only when defined: an update that omits it leaves the flag untouched.
+    if (payload.isSuperAdmin !== undefined) {
+      formData.append("is_super_admin", payload.isSuperAdmin ? "1" : "0");
+    }
+
+    const { data } = await api.post(`/api/users/${id}`, formData);
+    return data.data as User;
+  }
+
+  /** Permanent — users are not soft-deleted. */
+  async function deleteUser(id: number) {
+    await api.delete(`/api/users/${id}`);
+  }
+
+  return { fetchUsers, createUser, updateUser, deleteUser };
+});

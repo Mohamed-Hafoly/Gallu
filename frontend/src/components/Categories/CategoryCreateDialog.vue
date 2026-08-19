@@ -4,16 +4,17 @@
   import { useI18n } from "vue-i18n";
   import { useAuthStore } from "@/stores/auth";
   import { useCategoryStore } from "@/stores/category";
+  import { useNotifierStore } from "@/stores/notifier";
 
   const emit = defineEmits<{
     created: [];
-    failed: [];
   }>();
 
   const open = defineModel<boolean>({ default: false });
 
   const { t } = useI18n();
   const authStore = useAuthStore();
+  const notifier = useNotifierStore();
   const categoryStore = useCategoryStore();
 
   const formRef = ref<VForm | null>(null);
@@ -48,7 +49,7 @@
       emit("created");
       close();
     } catch {
-      emit("failed");
+      notifier.notify(t("admin.categories.createFailed"), "error");
     } finally {
       submitting.value = false;
     }
@@ -56,10 +57,9 @@
 </script>
 
 <template>
-  <CategoryDialog v-model="open" :title="t('admin.categories.createTitle')">
+  <FormDialog v-model="open" :title="t('admin.categories.createTitle')">
     <v-form ref="formRef" v-model="formValid" @submit.prevent="submit">
       <v-card-text class="flex flex-col gap-6">
-
         <v-text-field
           disabled
           :label="t('admin.categories.creator')"
@@ -87,9 +87,12 @@
           type="submit"
           variant="elevated"
         >
+          <template #loader>
+            <v-progress-circular color="tertiary" indeterminate width="3" />
+          </template>
           {{ t("common.create") }}
         </v-btn>
       </v-card-actions>
     </v-form>
-  </CategoryDialog>
+  </FormDialog>
 </template>

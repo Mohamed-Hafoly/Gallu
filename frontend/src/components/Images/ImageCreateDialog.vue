@@ -5,16 +5,17 @@
   import { useI18n } from "vue-i18n";
   import { useCategoryStore } from "@/stores/category";
   import { useImageStore } from "@/stores/image";
+  import { useNotifierStore } from "@/stores/notifier";
 
   const emit = defineEmits<{
     created: [];
-    failed: [];
   }>();
 
   const open = defineModel<boolean>({ default: false });
 
   const { t } = useI18n();
   const categoryStore = useCategoryStore();
+  const notifier = useNotifierStore();
   const imageStore = useImageStore();
 
   const formRef = ref<VForm | null>(null);
@@ -36,8 +37,11 @@
     categories.value = await categoryStore.fetchPickerCategories();
   });
 
-  const canSubmit = computed(() =>
-    formValid.value === true && selectedFile.value !== null && form.selectedCategoryIds.length > 0,
+  const canSubmit = computed(
+    () =>
+      formValid.value === true &&
+      selectedFile.value !== null &&
+      form.selectedCategoryIds.length > 0,
   );
 
   function reset() {
@@ -62,10 +66,13 @@
   async function submit() {
     const { valid } = await formRef.value!.validate();
     categoryError.value =
-      form.selectedCategoryIds.length > 0 ? "" : t("gallery.categoriesRequired");
+      form.selectedCategoryIds.length > 0
+        ? ""
+        : t("gallery.categoriesRequired");
     fileError.value = selectedFile.value ? "" : t("gallery.imageRequired");
 
-    if (!valid || form.selectedCategoryIds.length === 0 || !selectedFile.value) return;
+    if (!valid || form.selectedCategoryIds.length === 0 || !selectedFile.value)
+      return;
 
     submitting.value = true;
     try {
@@ -80,7 +87,7 @@
       emit("created");
       close();
     } catch {
-      emit("failed");
+      notifier.notify(t("gallery.uploadFailed"), "error");
     } finally {
       submitting.value = false;
     }
@@ -96,7 +103,9 @@
         editable
       />
 
-      <p v-if="fileError" class="ms-4 mt-1 text-caption text-error">{{ fileError }}</p>
+      <p v-if="fileError" class="ms-4 mt-1 text-caption text-error">
+        {{ fileError }}
+      </p>
 
       <TitleField v-model="form.title" editable />
 
@@ -121,6 +130,9 @@
           variant="elevated"
         >
           {{ t("common.create") }}
+          <template #loader>
+            <v-progress-circular color="tertiary" indeterminate width="3" />
+          </template>
         </v-btn>
 
         <v-btn :disabled="submitting" variant="flat" @click="close">

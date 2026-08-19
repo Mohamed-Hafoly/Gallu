@@ -37,6 +37,11 @@ export default createVuetify({
       variant: "outlined",
       color: "tertiary",
     },
+
+    VSelect: {
+      variant: "outlined",
+      color: "tertiary",
+    },
   },
   display: {
     mobileBreakpoint: "md",

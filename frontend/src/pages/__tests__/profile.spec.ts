@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mountWithPlugins } from "@/__tests__/helpers/mountWithPlugins";
 import ProfilePage from "@/pages/(auth)/profile.vue";
 import i18n from "@/plugins/i18n";
+import { useAuthStore } from "@/stores/auth";
 
 // The page reaches the auth store, which pulls in the axios client and the
 // real router — and vue-router's HMR hook throws under vitest. Both are
@@ -24,6 +25,10 @@ const user: User = {
   avatar_thumb_url: "http://localhost/images/default-avatar.jpg",
   has_avatar: false,
   default_avatar_url: "http://localhost/images/default-avatar.jpg",
+  created_at: "2026-08-01T10:00:00Z",
+  updated_at: "2026-08-01T10:00:00Z",
+  is_super_admin: false,
+  role: "member",
 };
 
 function mountPage(overrides: Partial<User> = {}) {
@@ -196,6 +201,56 @@ describe("profile page", () => {
     await startEditing();
 
     expect(deleteHalf()).toBeUndefined();
+  });
+
+  describe("email truncation", () => {
+    const longEmail = "thisisrlylongaddress@example.com";
+    const truncated = "thisisrlylongaddr…@example.com";
+
+    it("shows the shortened address while read-only", async () => {
+      wrapper = mountPage({ email: longEmail });
+      await flushPromises();
+
+      expect((inputs().email.element as HTMLInputElement).value).toBe(truncated);
+    });
+
+    it("restores the full address once editing starts", async () => {
+      wrapper = mountPage({ email: longEmail });
+      await flushPromises();
+      await startEditing();
+
+      expect((inputs().email.element as HTMLInputElement).value).toBe(longEmail);
+    });
+
+    // The truncated string is not a valid address, so it must never reach the
+    // validators while the field is only displaying it.
+    it("does not report a validation error while read-only", async () => {
+      wrapper = mountPage({ email: longEmail });
+      await flushPromises();
+
+      expect(wrapper.find(".v-messages__message").exists()).toBe(false);
+    });
+
+    // The regression that matters: saving must send the real address, never
+    // the ellipsised one that was only ever on screen.
+    it("submits the full address after an edit", async () => {
+      wrapper = mountPage({ email: longEmail });
+      await flushPromises();
+      await startEditing();
+
+      await inputs().name.setValue("Jane Doe");
+      await flushPromises();
+
+      // jsdom doesn't submit a form from a submit button's click, so the
+      // submit event is dispatched directly.
+      await wrapper.find("form").trigger("submit");
+      await flushPromises();
+
+      const authStore = useAuthStore();
+      expect(authStore.updateProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ email: longEmail }),
+      );
+    });
   });
 
   it("restores the original values on cancel", async () => {
