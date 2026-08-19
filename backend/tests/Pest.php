@@ -1,5 +1,12 @@
 <?php
 
+use App\Models\User;
+use Database\Seeders\RoleSeeder;
+use Spatie\Permission\PermissionRegistrar;
+use Tests\TestCase;
+
+use function Pest\Laravel\seed;
+
 /*
 |--------------------------------------------------------------------------
 | Test Case
@@ -11,7 +18,7 @@
 |
 */
 
-pest()->extend(Tests\TestCase::class)
+pest()->extend(TestCase::class)
  // ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature');
 
@@ -41,7 +48,27 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * Reset the role state Spatie caches per process, then seed the roles.
+ *
+ * The registrar memoises lookups for the life of the process, so without the
+ * forget a role seeded in one test can answer in the next. Call from a
+ * beforeEach in any file that needs roles.
+ */
+function seedRoles(): void
 {
-    // ..
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+    setPermissionsTeamId(User::GLOBAL_TEAM_ID);
+    seed(RoleSeeder::class);
+}
+
+/**
+ * A global super-admin.
+ *
+ * The flag is a plain column, so no role seeding or team context is needed —
+ * PromoteSuperAdminCommand has its own coverage in SuperAdminTest.
+ */
+function superAdmin(): User
+{
+    return User::factory()->superAdmin()->create();
 }

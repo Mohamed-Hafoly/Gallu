@@ -16,6 +16,10 @@ return new class extends Migration
             $table->string('name');
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
+            // Global, above teams, per req.txt — deliberately not a spatie role,
+            // whose assignments are always scoped to one team. Never fillable:
+            // registration and the profile update both mass-assign.
+            $table->boolean('is_super_admin')->default(false);
             $table->string('password');
             $table->rememberToken();
             $table->timestamps();

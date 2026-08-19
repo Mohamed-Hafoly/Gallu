@@ -6,6 +6,9 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
+/**
+ * @mixin User
+ */
 class UserResource extends JsonResource
 {
     /**
@@ -27,6 +30,13 @@ class UserResource extends JsonResource
             // removal is pending but not yet saved.
             'has_avatar' => $this->hasMedia(User::AVATAR_COLLECTION),
             'default_avatar_url' => asset(User::DEFAULT_AVATAR_PATH),
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
+            // Both read the same column, so they cannot disagree. `role` is
+            // the display vocabulary; `is_super_admin` is the predicate the SPA
+            // gates its nav and route guard on.
+            'is_super_admin' => $this->is_super_admin,
+            'role' => $this->role()->value,
         ];
     }
 }

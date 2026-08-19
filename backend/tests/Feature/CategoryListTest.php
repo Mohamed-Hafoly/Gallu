@@ -63,3 +63,54 @@ it('still lists a category whose creator was deleted, with a null creator', func
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.creator', null);
 });
+
+// The admin table renders both timestamps alongside the names, so a dropped
+// field here is a blank column rather than an error.
+it('exposes every field the admin table renders', function () {
+    $user = User::factory()->create();
+    Category::factory()->create();
+
+    $row = actingAs($user)->getJson('/api/categories')->assertOk()->json('data.0');
+
+    expect($row)->toHaveKeys([
+        'id', 'name_en', 'name_ar', 'creator', 'created_at', 'updated_at', 'deleted_at',
+    ]);
+});
+
+it('reports both timestamps for a live category, and no deletion', function () {
+    $user = User::factory()->create();
+    $category = Category::factory()->create();
+
+    actingAs($user)
+        ->getJson('/api/categories')
+        ->assertOk()
+        ->assertJsonPath('data.0.created_at', $category->created_at->toJSON())
+        ->assertJsonPath('data.0.updated_at', $category->updated_at->toJSON())
+        ->assertJsonPath('data.0.deleted_at', null);
+});
+
+it('reports updated_at moving when a category is renamed', function () {
+    $user = User::factory()->create();
+    $category = Category::factory()->create([
+        'created_at' => now()->subWeek(),
+        'updated_at' => now()->subWeek(),
+    ]);
+
+    actingAs($user)->patchJson("/api/categories/{$category->id}", ['name_en' => 'Renamed']);
+
+    $row = actingAs($user)->getJson('/api/categories')->json('data.0');
+
+    expect($row['created_at'])->toBe($category->created_at->toJSON())
+        ->and($row['updated_at'])->not->toBe($category->updated_at->toJSON());
+});
+
+it('reports deleted_at once a category is trashed', function () {
+    $user = User::factory()->create();
+    $category = Category::factory()->create();
+    $category->delete();
+
+    actingAs($user)
+        ->getJson('/api/categories')
+        ->assertOk()
+        ->assertJsonPath('data.0.deleted_at', $category->fresh()->deleted_at->toJSON());
+});

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\RoleName;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -30,6 +31,17 @@ class User extends Authenticatable implements HasMedia
      * fallback rather than an upload — see registerMediaCollections().
      */
     public const DEFAULT_AVATAR_PATH = 'images/default-avatar.jpg';
+
+    /**
+     * Default ambient team context for spatie, used until team middleware
+     * sets one per request.
+     *
+     * `model_has_roles.team_id` is NOT NULL and part of the primary key, so
+     * every assignment needs a concrete id. Real teams auto-increment from 1,
+     * which leaves 0 free and unambiguous. Nothing to do with super-admin —
+     * that is the `is_super_admin` column.
+     */
+    public const GLOBAL_TEAM_ID = 0;
 
     /**
      * The attributes that are mass assignable.
@@ -62,12 +74,22 @@ class User extends Authenticatable implements HasMedia
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_super_admin' => 'boolean',
         ];
     }
 
     public function images(): HasMany
     {
         return $this->hasMany(Image::class);
+    }
+
+    /**
+     * The role this user is presented as. Binary until teams land, at which
+     * point a team admin resolves to RoleName::Admin here.
+     */
+    public function role(): RoleName
+    {
+        return $this->is_super_admin ? RoleName::SuperAdmin : RoleName::Member;
     }
 
     /**
@@ -105,5 +127,30 @@ class User extends Authenticatable implements HasMedia
             ->usingName($this->name)
             ->usingFileName(Str::uuid().'.'.$file->getClientOriginalExtension())
             ->toMediaCollection(self::AVATAR_COLLECTION);
+    }
+
+    /**
+     * Apply the avatar half of a multipart form submission, if it asked for one.
+     *
+     * Clearing the collection is enough to "remove" an avatar — the collection
+     * falls back to the default image. Shared by the Fortify profile action and
+     * the admin user endpoint so both agree on what `remove_avatar` means; the
+     * flag arrives over multipart as the string "1", hence filter_var.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    public function applyAvatarInput(array $input): void
+    {
+        if (filter_var($input['remove_avatar'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            $this->clearMediaCollection(self::AVATAR_COLLECTION);
+
+            return;
+        }
+
+        if (! isset($input['avatar'])) {
+            return;
+        }
+
+        $this->setAvatarFromFile($input['avatar']);
     }
 }

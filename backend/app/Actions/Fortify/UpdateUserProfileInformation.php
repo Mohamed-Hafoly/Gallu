@@ -43,31 +43,7 @@ class UpdateUserProfileInformation implements UpdatesUserProfileInformation
             ])->save();
         }
 
-        $this->updateAvatar($user, $input);
-    }
-
-    /**
-     * Apply the avatar half of the request, if it asked for one.
-     *
-     * Clearing the collection is enough to "remove" an avatar — the collection
-     * falls back to the default image. The collection is `singleFile()`, so a
-     * new upload replaces the old one without an explicit clear.
-     *
-     * @param  array<string, mixed>  $input
-     */
-    protected function updateAvatar(User $user, array $input): void
-    {
-        if (filter_var($input['remove_avatar'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
-            $user->clearMediaCollection(User::AVATAR_COLLECTION);
-
-            return;
-        }
-
-        if (! isset($input['avatar'])) {
-            return;
-        }
-
-        $user->setAvatarFromFile($input['avatar']);
+        $user->applyAvatarInput($input);
     }
 
     /**
