@@ -18,6 +18,10 @@ class UserResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // One lookup for both the role and the team, pre-selected by
+        // scopeWithTeamAssignment() on listings so this costs no query per row.
+        $team = $this->teamAssignment();
+
         return [
             'id' => $this->id,
             'name' => $this->name,
@@ -37,6 +41,15 @@ class UserResource extends JsonResource
             // gates its nav and route guard on.
             'is_super_admin' => $this->is_super_admin,
             'role' => $this->role()->value,
+            // Emitted plainly rather than through whenNotNull(), which drops the
+            // key altogether for a null value — the SPA wants a `team` of null
+            // for a team-less user, not a missing field it has to guard.
+            //
+            // Null also covers a trashed team: teamAssignment() excludes them.
+            'team' => $team === [] ? null : [
+                'id' => $team['team_id'],
+                'name' => $team['team_name'],
+            ],
         ];
     }
 }

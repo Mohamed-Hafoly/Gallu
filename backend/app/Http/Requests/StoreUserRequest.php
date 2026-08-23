@@ -32,6 +32,10 @@ class StoreUserRequest extends FormRequest
             'email' => UserValidationRules::email(),
             'password' => $this->passwordRules(),
             'is_super_admin' => ['sometimes', 'boolean'],
+            // Membership, same shape as the update — so the create and edit
+            // dialogs can offer the same controls.
+            'team_id' => ['sometimes', 'nullable', 'integer', 'exists:teams,id'],
+            'team_role' => ['sometimes', 'nullable', 'string', 'in:admin,member'],
             // Optional, exactly as on registration — a user without one falls
             // back to the shipped default image.
             'avatar' => ImageValidationRules::image(required: false),

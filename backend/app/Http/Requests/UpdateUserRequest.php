@@ -28,6 +28,10 @@ class UpdateUserRequest extends FormRequest
             // Promote/demote from the users screen. `sometimes` matters: an
             // update that omits it must leave the flag alone, not clear it.
             'is_super_admin' => ['sometimes', 'boolean'],
+            // Membership. Null clears it; the role only applies when a team is
+            // given, and is ignored for a super-admin, who sits above teams.
+            'team_id' => ['sometimes', 'nullable', 'integer', 'exists:teams,id'],
+            'team_role' => ['sometimes', 'nullable', 'string', 'in:admin,member'],
         ];
     }
 }

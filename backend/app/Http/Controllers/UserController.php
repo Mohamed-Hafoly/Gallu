@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\RoleName;
 use App\Http\Requests\IndexUserRequest;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Http\Resources\UserResource;
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -52,6 +54,9 @@ class UserController extends Controller
             // The resource's avatar_url / has_avatar read the media relation,
             // which is a query per row without this.
             ->with('media')
+            // Same reason: role and team both come off teamAssignment(), which
+            // would otherwise query per row.
+            ->withTeamAssignment()
             ->when($search !== '', fn ($builder) => $builder->where(
                 fn ($grouped) => $grouped
                     ->where('name', 'like', "%{$search}%")
@@ -98,6 +103,7 @@ class UserController extends Controller
         // agree on what the avatar field means. After save(), not before —
         // media needs a persisted model to attach to.
         $user->applyAvatarInput($request->validated());
+        $this->applyTeamInput($request, $user);
 
         // `password` is fillable and cast `hashed`, so saving hashes it.
         return new UserResource($user);
@@ -120,10 +126,36 @@ class UserController extends Controller
         // forceFill, not update(): the flag is deliberately not fillable.
         $user->forceFill($attributes)->save();
         $user->applyAvatarInput($request->validated());
+        $this->applyTeamInput($request, $user);
 
         // The media relation is cached on the instance, so the avatar URLs
         // would still describe the pre-upload state without this.
         return new UserResource($user->refresh()->load('roles'));
+    }
+
+    /**
+     * Apply the membership half of an update, if it asked for one.
+     *
+     * A super-admin sits above teams per req.txt, so promoting someone clears
+     * their team rather than leaving a stale assignment behind. `team_role` is
+     * only meaningful alongside a team and defaults to Member.
+     */
+    protected function applyTeamInput(StoreUserRequest|UpdateUserRequest $request, User $user): void
+    {
+        if ($user->is_super_admin) {
+            $user->assignToTeam(null);
+
+            return;
+        }
+
+        if (! $request->has('team_id')) {
+            return;
+        }
+
+        $teamId = $request->integer('team_id');
+        $role = RoleName::tryFrom($request->string('team_role')->toString()) ?? RoleName::Member;
+
+        $user->assignToTeam($teamId === 0 ? null : Team::find($teamId), $role);
     }
 
     public function destroy(Request $request, User $user): Response

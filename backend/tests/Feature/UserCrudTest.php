@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\RoleName;
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -187,7 +188,7 @@ it('exposes the columns the admin table renders', function () {
     $row = actingAs($admin)->getJson('/api/users')->assertOk()->json('data.0');
 
     expect($row)->toHaveKeys([
-        'id', 'name', 'email', 'role', 'avatar_thumb_url', 'created_at', 'updated_at', 'is_super_admin',
+        'id', 'name', 'email', 'role', 'team', 'avatar_thumb_url', 'created_at', 'updated_at', 'is_super_admin',
     ]);
 });
 
@@ -662,4 +663,155 @@ it('rejects a non-image avatar on create, and stores nothing', function () {
         ->assertJsonValidationErrorFor('avatar');
 
     $this->assertDatabaseMissing('users', ['email' => 'created@example.com']);
+});
+
+it('assigns a user to a team', function (string $role) {
+    $team = Team::factory()->create(['name' => 'Design']);
+    $target = User::factory()->create();
+
+    actingAs(superAdmin())
+        ->patchJson("/api/users/{$target->id}", [
+            'name' => $target->name,
+            'email' => $target->email,
+            'team_id' => $team->id,
+            'team_role' => $role,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.team.id', $team->id)
+        ->assertJsonPath('data.team.name', 'Design')
+        ->assertJsonPath('data.role', $role);
+
+    expect($target->fresh()->teamAssignment()['team_id'])->toBe($team->id);
+})->with([
+    'as a team admin' => [RoleName::Admin->value],
+    'as a member' => [RoleName::Member->value],
+]);
+
+// One team per user is the app's rule, not spatie's — spatie would happily hold
+// an assignment per team, so assignToTeam() clears before it writes.
+it('replaces the assignment when a user moves teams', function () {
+    $first = Team::factory()->create();
+    $second = Team::factory()->create();
+    $target = User::factory()->create();
+    $target->assignToTeam($first, RoleName::Admin);
+
+    actingAs(superAdmin())
+        ->patchJson("/api/users/{$target->id}", [
+            'name' => $target->name,
+            'email' => $target->email,
+            'team_id' => $second->id,
+            'team_role' => RoleName::Member->value,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.team.id', $second->id);
+
+    expect(DB::table('model_has_roles')->where('model_id', $target->id)->count())->toBe(1);
+});
+
+it('clears the team when team_id is null', function () {
+    $team = Team::factory()->create();
+    $target = User::factory()->create();
+    $target->assignToTeam($team, RoleName::Admin);
+
+    actingAs(superAdmin())
+        ->patchJson("/api/users/{$target->id}", [
+            'name' => $target->name,
+            'email' => $target->email,
+            'team_id' => null,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.team', null)
+        ->assertJsonPath('data.role', RoleName::Member->value);
+
+    expect(DB::table('model_has_roles')->where('model_id', $target->id)->count())->toBe(0);
+});
+
+it('leaves the team alone when the update does not mention it', function () {
+    $team = Team::factory()->create();
+    $target = User::factory()->create();
+    $target->assignToTeam($team, RoleName::Admin);
+
+    actingAs(superAdmin())
+        ->patchJson("/api/users/{$target->id}", ['name' => 'Renamed', 'email' => $target->email])
+        ->assertOk()
+        ->assertJsonPath('data.team.id', $team->id)
+        ->assertJsonPath('data.role', RoleName::Admin->value);
+});
+
+// req.txt puts the super-admin above teams, so promoting drops the membership
+// rather than leaving a stale row behind.
+it('clears the team when a user is promoted to super admin', function () {
+    $team = Team::factory()->create();
+    $target = User::factory()->create();
+    $target->assignToTeam($team, RoleName::Admin);
+
+    actingAs(superAdmin())
+        ->patchJson("/api/users/{$target->id}", [
+            'name' => $target->name,
+            'email' => $target->email,
+            'is_super_admin' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.team', null)
+        ->assertJsonPath('data.role', RoleName::SuperAdmin->value);
+
+    expect(DB::table('model_has_roles')->where('model_id', $target->id)->count())->toBe(0);
+});
+
+it('rejects a team that does not exist', function () {
+    $target = User::factory()->create();
+
+    actingAs(superAdmin())
+        ->patchJson("/api/users/{$target->id}", [
+            'name' => $target->name,
+            'email' => $target->email,
+            'team_id' => 9999,
+        ])
+        ->assertJsonValidationErrorFor('team_id');
+});
+
+it('rejects a team role outside the enum', function () {
+    $team = Team::factory()->create();
+    $target = User::factory()->create();
+
+    actingAs(superAdmin())
+        ->patchJson("/api/users/{$target->id}", [
+            'name' => $target->name,
+            'email' => $target->email,
+            'team_id' => $team->id,
+            'team_role' => 'super-admin',
+        ])
+        ->assertJsonValidationErrorFor('team_role');
+});
+
+// Membership is a row against the team, so trashing the team hides it without
+// destroying it — the row has to survive for a restore to mean anything.
+it('reports no team while the team is trashed, and again once restored', function () {
+    $team = Team::factory()->create();
+    $target = User::factory()->create();
+    $target->assignToTeam($team, RoleName::Admin);
+
+    $team->delete();
+
+    expect($target->fresh()->teamAssignment())->toBe([])
+        ->and($target->fresh()->role())->toBe(RoleName::Member);
+
+    $team->restore();
+
+    expect($target->fresh()->teamAssignment()['team_id'])->toBe($team->id)
+        ->and($target->fresh()->role())->toBe(RoleName::Admin);
+});
+
+it('lists each user with their team', function () {
+    $team = Team::factory()->create(['name' => 'Design']);
+    $member = User::factory()->create();
+    $member->assignToTeam($team, RoleName::Admin);
+    User::factory()->create();
+
+    $rows = collect(actingAs(superAdmin())->getJson('/api/users?per_page=-1')->json('data'))
+        ->keyBy('id');
+
+    expect($rows[$member->id]['team']['name'])->toBe('Design')
+        ->and($rows[$member->id]['role'])->toBe(RoleName::Admin->value)
+        ->and($rows->except($member->id)->firstWhere('is_super_admin', false)['team'])->toBeNull();
 });

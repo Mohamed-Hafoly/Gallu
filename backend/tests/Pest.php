@@ -58,7 +58,7 @@ expect()->extend('toBeOne', function () {
 function seedRoles(): void
 {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
-    setPermissionsTeamId(User::GLOBAL_TEAM_ID);
+    setPermissionsTeamId(null);
     seed(RoleSeeder::class);
 }
 

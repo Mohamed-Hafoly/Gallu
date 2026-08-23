@@ -109,7 +109,7 @@ it('grants a super admin whatever team context is ambient', function () {
 
     expect($user->can('anything-at-all'))->toBeTrue();
 
-    setPermissionsTeamId(User::GLOBAL_TEAM_ID);
+    setPermissionsTeamId(null);
 });
 
 it('presents a super admin and a plain user under different role names', function () {
