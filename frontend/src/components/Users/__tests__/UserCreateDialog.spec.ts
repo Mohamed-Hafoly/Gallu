@@ -89,12 +89,16 @@ describe("submitting", () => {
 
     // Names and emails are trimmed at submit; passwords deliberately are not,
     // since " hunter2 " is ten characters to the backend.
+    // `role` is split back into the global flag and the in-team role, which is
+    // how the backend models the two.
     expect(useUserStore().createUser).toHaveBeenCalledWith({
       name: "Ada Lovelace",
       email: "ada@example.com",
       password: "password123",
       passwordConfirmation: "password123",
       isSuperAdmin: false,
+      teamId: null,
+      teamRole: "member",
       avatar: null,
     });
     wrapper.unmount();

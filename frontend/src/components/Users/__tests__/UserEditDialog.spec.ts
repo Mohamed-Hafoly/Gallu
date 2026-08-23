@@ -29,6 +29,7 @@ const target: User = {
   updated_at: "2026-08-15T10:00:00Z",
   is_super_admin: false,
   role: "member",
+  team: null,
 };
 
 /** Signed in as a different super-admin unless a spec says otherwise. */
@@ -110,12 +111,16 @@ describe("saving", () => {
     saveButton().click();
     await flushPromises();
 
+    // `role` is split back into the global flag and the in-team role, which is
+    // how the backend models the two.
     expect(useUserStore().updateUser).toHaveBeenCalledWith(7, {
       name: "Grace Hopper",
       email: "ada@example.com",
       avatar: null,
       removeAvatar: false,
       isSuperAdmin: false,
+      teamId: null,
+      teamRole: "member",
     });
     wrapper.unmount();
   });
@@ -134,7 +139,7 @@ describe("saving", () => {
 
     expect(useUserStore().updateUser).toHaveBeenCalledWith(
       7,
-      expect.objectContaining({ isSuperAdmin: undefined }),
+      expect.objectContaining({ isSuperAdmin: undefined, teamId: undefined }),
     );
     wrapper.unmount();
   });

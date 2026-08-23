@@ -68,8 +68,11 @@
     // The API's name for the is_super_admin column, which is what the backend
     // actually sorts on.
     { title: t("admin.users.role"), key: "role", sortable: true },
-    { title: t("admin.users.createdAt"), key: "created_at", sortable: true },
-    { title: t("admin.users.updatedAt"), key: "updated_at", sortable: true },
+    // Not sortable: the team lives in the role pivot, not on `users`, so the
+    // backend has no column to order by.
+    { title: t("admin.users.team"), key: "team", sortable: false },
+    { title: t("common.createdAt"), key: "created_at", sortable: true },
+    { title: t("common.updatedAt"), key: "updated_at", sortable: true },
     { title: t("admin.users.actions"), key: "actions", sortable: false },
   ]);
 
@@ -132,7 +135,7 @@
 
 
   function rowProps({ item }: { item: User }) {
-    return item.is_super_admin ? { class: "bg-primary text-on-primary" } : {};
+    return item.is_super_admin ? { class: "bg-primary-darken-1 text-on-primary" } : {};
   }
 
   function openCreate() {
@@ -291,6 +294,10 @@
 
       <template #item.role="{ item }">
         {{ t(`admin.users.roles.${item.role}`) }}
+      </template>
+
+      <template #item.team="{ item }">
+        {{ item.team?.name ?? t("common.emptyValue") }}
       </template>
 
       <template #item.created_at="{ item }">

@@ -24,6 +24,9 @@ export interface CreateUserPayload {
   isSuperAdmin: boolean;
   /** Optional, exactly as on registration. */
   avatar?: File | null;
+  /** Membership, same split as the update: null means no team. */
+  teamId?: number | null;
+  teamRole?: "admin" | "member";
 }
 
 export interface UpdateUserPayload {
@@ -34,6 +37,10 @@ export interface UpdateUserPayload {
   /** Promote or demote. Left undefined when editing yourself — the backend
    * refuses to let a super-admin change their own flag. */
   isSuperAdmin?: boolean;
+  /** Membership. Null clears it; undefined leaves it untouched. Ignored by the
+   * backend for a super-admin, who sits above teams. */
+  teamId?: number | null;
+  teamRole?: "admin" | "member";
 }
 
 export const useUserStore = defineStore("user", () => {
@@ -59,6 +66,10 @@ export const useUserStore = defineStore("user", () => {
     formData.append("password", payload.password);
     formData.append("password_confirmation", payload.passwordConfirmation);
     formData.append("is_super_admin", payload.isSuperAdmin ? "1" : "0");
+    if (payload.teamId != null) {
+      formData.append("team_id", String(payload.teamId));
+      if (payload.teamRole) formData.append("team_role", payload.teamRole);
+    }
     if (payload.avatar) formData.append("avatar", payload.avatar);
 
     const { data } = await api.post("/api/users", formData);
@@ -82,6 +93,12 @@ export const useUserStore = defineStore("user", () => {
     // Only when defined: an update that omits it leaves the flag untouched.
     if (payload.isSuperAdmin !== undefined) {
       formData.append("is_super_admin", payload.isSuperAdmin ? "1" : "0");
+    }
+    // Same rule for the team. Empty string rather than "null": multipart has no
+    // null, and the backend reads 0 — what integer() gives for "" — as "clear".
+    if (payload.teamId !== undefined) {
+      formData.append("team_id", payload.teamId === null ? "" : String(payload.teamId));
+      if (payload.teamRole) formData.append("team_role", payload.teamRole);
     }
 
     const { data } = await api.post(`/api/users/${id}`, formData);

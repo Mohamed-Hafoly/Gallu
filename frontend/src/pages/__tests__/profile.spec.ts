@@ -29,6 +29,7 @@ const user: User = {
   updated_at: "2026-08-01T10:00:00Z",
   is_super_admin: false,
   role: "member",
+  team: null,
 };
 
 function mountPage(overrides: Partial<User> = {}) {

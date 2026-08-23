@@ -11,6 +11,26 @@ vi.mock("@/plugins/axios", () => ({
   default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
 
+// The team list is fetched in onMounted, which has already run by the time a
+// test could reach the store createTestingPinia builds for that mount — so the
+// store module is stubbed instead, and each test sets what it returns.
+const { fetchPickerTeams } = vi.hoisted(() => ({
+  fetchPickerTeams: vi.fn(),
+}));
+
+vi.mock("@/stores/team", () => ({
+  useTeamStore: () => ({ fetchPickerTeams }),
+}));
+
+/** Role is the only plain select; team is an autocomplete. */
+function roleSelect(wrapper: ReturnType<typeof mountFields>) {
+  return wrapper.findAllComponents({ name: "VSelect" })[0];
+}
+
+function teamField(wrapper: ReturnType<typeof mountFields>) {
+  return wrapper.findComponent({ name: "VAutocomplete" });
+}
+
 function mountFields(props: Record<string, unknown> = {}) {
   return mountWithPlugins(UserFields, {
     props: { name: "Ada Lovelace", email: "ada@example.com", ...props },
@@ -29,6 +49,7 @@ function type(input: HTMLInputElement, value: string) {
 
 beforeEach(() => {
   i18n.global.locale.value = "en";
+  fetchPickerTeams.mockResolvedValue([]);
 });
 
 describe("name and email", () => {
@@ -74,17 +95,16 @@ describe("name and email", () => {
 describe("the role select", () => {
   // Read off the prop rather than by opening the menu: Vuetify teleports the
   // overlay and does not open it for a synthetic click under jsdom.
-  it("offers exactly the two roles the endpoints accept", () => {
-    const items = mountFields()
-      .findComponent({ name: "VSelect" })
-      .props("items");
+  it("offers all three roles, valued as the backend names them", () => {
+    const items = roleSelect(mountFields()).props("items");
 
-    // "Team admin" is deliberately absent — it is per-team, and neither
-    // endpoint accepts anything but the global boolean. Boolean values, since
-    // that is what both stores send as is_super_admin.
+    // Now that teams exist, "Team admin" is meaningful: `super-admin` is the
+    // global flag while `admin` and `member` are roles within a team. The
+    // values are RoleName strings, which both dialogs split back apart.
     expect(items).toEqual([
-      { title: "User", value: false },
-      { title: "Admin", value: true },
+      { title: "User", value: "member" },
+      { title: "Team admin", value: "admin" },
+      { title: "Admin", value: "super-admin" },
     ]);
   });
 
@@ -96,13 +116,10 @@ describe("the role select", () => {
     i18n.global.locale.value = "ar";
     await flushPromises();
 
-    const titles = (
-      wrapper.findComponent({ name: "VSelect" }).props("items") as {
-        title: string;
-      }[]
-    ).map((item) => item.title);
+    const titles = (roleSelect(wrapper).props("items") as { title: string }[])
+      .map((item) => item.title);
 
-    expect(titles).toEqual(["مستخدم", "مدير"]);
+    expect(titles).toEqual(["مستخدم", "مدير فريق", "مدير"]);
   });
 
   it("is enabled by default", () => {
@@ -141,5 +158,60 @@ describe("the after-email slot", () => {
 
   it("renders nothing when the slot is unused", () => {
     expect(mountFields().find("[data-test='slotted']").exists()).toBe(false);
+  });
+});
+
+describe("the team field", () => {
+  // Searchable rather than a plain select, because the team list grows with the
+  // app.
+  it("is an autocomplete, labelled", () => {
+    const wrapper = mountFields();
+
+    expect(teamField(wrapper).exists()).toBe(true);
+    expect(teamField(wrapper).props("label")).toBe("Team");
+
+    wrapper.unmount();
+  });
+
+  it("offers the fetched teams alongside an explicit no-team option", async () => {
+    fetchPickerTeams.mockResolvedValue([
+      { id: 4, name: "Ops", description: null },
+    ]);
+
+    const wrapper = mountFields();
+    await flushPromises();
+
+    // Null is offered explicitly so a user can be taken out of their team.
+    expect(teamField(wrapper).props("items")).toEqual([
+      { title: "No team", value: null },
+      { title: "Ops", value: 4 },
+    ]);
+
+    wrapper.unmount();
+  });
+
+  /**
+   * The field sits near the bottom of the dialog, so Vuetify's connected
+   * strategy used to open downward for one result and flip upward for more.
+   * Pinned to the roomy side with a height that always fits there.
+   */
+  it("pins its menu above the field so it cannot flip", () => {
+    const wrapper = mountFields();
+
+    expect(teamField(wrapper).props("menuProps")).toEqual({
+      location: "top",
+      maxHeight: 300,
+    });
+
+    wrapper.unmount();
+  });
+
+  it("is disabled for a super-admin, who sits above teams", async () => {
+    const wrapper = mountFields({ role: "super-admin" });
+    await flushPromises();
+
+    expect(teamField(wrapper).props("disabled")).toBe(true);
+
+    wrapper.unmount();
   });
 });

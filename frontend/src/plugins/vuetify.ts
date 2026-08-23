@@ -27,6 +27,7 @@ export default createVuetify({
           primary: "#549596",
           surface: "#155354",
           tertiary: "#EDC1DE",
+          warning: "#FFA93F",
           error: "#F87171",
         },
       },

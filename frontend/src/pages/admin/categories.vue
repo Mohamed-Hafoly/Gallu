@@ -67,8 +67,8 @@
     },
     { title: t("admin.categories.nameArabic"), key: "name_ar", sortable: true },
     { title: t("admin.categories.creator"), key: "creator", sortable: false },
-    { title: t("admin.users.createdAt"), key: "created_at", sortable: true },
-    { title: t("admin.categories.updatedAt"), key: "updated_at", sortable: true },
+    { title: t("common.createdAt"), key: "created_at", sortable: true },
+    { title: t("common.updatedAt"), key: "updated_at", sortable: true },
   ]);
 
   const headers = computed(() => [

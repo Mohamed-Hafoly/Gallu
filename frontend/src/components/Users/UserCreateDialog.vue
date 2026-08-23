@@ -1,4 +1,5 @@
 <script setup lang="ts">
+  import type { User } from "@/types/user";
   import type { VForm } from "vuetify/components";
   import { nextTick, reactive, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
@@ -33,7 +34,8 @@
     email: "",
     password: "",
     passwordConfirmation: "",
-    isSuperAdmin: false,
+    role: "member" as User["role"],
+    teamId: null as number | null,
   });
 
   // Start fresh next time, whether closed via Cancel or Create. No isDirty here
@@ -46,7 +48,8 @@
     form.email = "";
     form.password = "";
     form.passwordConfirmation = "";
-    form.isSuperAdmin = false;
+    form.role = "member";
+    form.teamId = null;
     pickedAvatar.value = null;
 
     // After the tick, not before: emptying the fields re-runs their rules, so a
@@ -74,7 +77,11 @@
         email: form.email.trim(),
         password: form.password,
         passwordConfirmation: form.passwordConfirmation,
-        isSuperAdmin: form.isSuperAdmin,
+        // `role` splits back into the global flag and the in-team role, which
+        // is how the backend models them.
+        isSuperAdmin: form.role === "super-admin",
+        teamId: form.teamId,
+        teamRole: form.role === "super-admin" ? undefined : form.role,
         avatar: pickedAvatar.value,
       });
 
@@ -102,8 +109,9 @@
 
         <UserFields
           v-model:email="form.email"
-          v-model:is-super-admin="form.isSuperAdmin"
           v-model:name="form.name"
+          v-model:role="form.role"
+          v-model:team-id="form.teamId"
         >
           <!-- Create-only, and slotted so it lands between email and role
                rather than after the whole shared block. -->

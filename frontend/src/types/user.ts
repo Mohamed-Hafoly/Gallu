@@ -17,4 +17,7 @@ export interface User {
   /** Presentation of the same fact, labelled through admin.users.roles.*.
    * Binary until teams exist, when a team admin resolves to "admin". */
   role: "super-admin" | "admin" | "member";
+  /** The team this user belongs to. Null for a team-less user, and for one
+   * whose team is soft-deleted. */
+  team: { id: number; name: string } | null;
 }

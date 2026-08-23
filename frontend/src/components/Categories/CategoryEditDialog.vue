@@ -3,13 +3,11 @@
   import type { VForm } from "vuetify/components";
   import { computed, reactive, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
-  import { useDateFormat } from "@/composables/useDateFormat";
   import { useCategoryStore } from "@/stores/category";
   import { useNotifierStore } from "@/stores/notifier";
 
   const props = defineProps<{ category: Category }>();
 
-  const { formatDateTime } = useDateFormat();
 
   const emit = defineEmits<{
     updated: [];
@@ -96,34 +94,29 @@
 <template>
   <FormDialog v-model="open" :title="t('admin.categories.editTitle')">
     <v-form ref="formRef" v-model="formValid" @submit.prevent="submit">
-      <v-card-text class="flex flex-col gap-6">
-        <v-text-field
-          disabled
-          :label="t('admin.categories.id')"
-          :model-value="category.id"
-        />
+      <v-card-text>
+        <v-row dense>
+          <v-text-field
+            disabled
+            :label="t('admin.categories.id')"
+            :model-value="category.id"
+          />
 
-        <v-text-field
-          disabled
-          :label="t('admin.categories.creator')"
-          :model-value="category.creator ?? t('common.emptyValue')"
-        />
+          <v-text-field
+            disabled
+            :label="t('admin.categories.creator')"
+            :model-value="category.creator ?? t('common.emptyValue')"
+          />
+        </v-row>
 
         <CategoryNameFields
           v-model:name-ar="form.name_ar"
           v-model:name-en="form.name_en"
         />
 
-        <v-text-field
-          disabled
-          :label="t('admin.categories.createdAt')"
-          :model-value="formatDateTime(category.created_at)"
-        />
-
-        <v-text-field
-          disabled
-          :label="t('admin.categories.updatedAt')"
-          :model-value="formatDateTime(category.updated_at)"
+        <TimestampFields
+          :created="category.created_at"
+          :updated="category.updated_at"
         />
       </v-card-text>
 

@@ -3,7 +3,6 @@
   import type { VForm } from "vuetify/components";
   import { computed, reactive, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
-  import { useDateFormat } from "@/composables/useDateFormat";
   import { useAuthStore } from "@/stores/auth";
   import { useNotifierStore } from "@/stores/notifier";
   import { useUserStore } from "@/stores/user";
@@ -17,7 +16,6 @@
   const open = defineModel<boolean>({ default: false });
 
   const { t } = useI18n();
-  const { formatDateTime } = useDateFormat();
   const userStore = useUserStore();
   const authStore = useAuthStore();
   const notifier = useNotifierStore();
@@ -26,8 +24,18 @@
   const formValid = ref<boolean | null>(null);
   const submitting = ref(false);
 
-  const form = reactive({ name: "", email: "", isSuperAdmin: false });
-  const original = reactive({ name: "", email: "", isSuperAdmin: false });
+  const form = reactive({
+    name: "",
+    email: "",
+    role: "member" as User["role"],
+    teamId: null as number | null,
+  });
+  const original = reactive({
+    name: "",
+    email: "",
+    role: "member" as User["role"],
+    teamId: null as number | null,
+  });
 
   // The backend refuses to let a super-admin change their own flag, so the
   // select is shown disabled rather than offered and rejected.
@@ -47,10 +55,12 @@
     (user) => {
       form.name = user.name;
       form.email = user.email;
-      form.isSuperAdmin = user.is_super_admin;
+      form.role = user.role;
+      form.teamId = user.team?.id ?? null;
       original.name = user.name;
       original.email = user.email;
-      original.isSuperAdmin = user.is_super_admin;
+      original.role = user.role;
+      original.teamId = form.teamId;
       resetAvatarState();
       formRef.value?.resetValidation();
     },
@@ -65,7 +75,8 @@
 
     form.name = original.name;
     form.email = original.email;
-    form.isSuperAdmin = original.isSuperAdmin;
+    form.role = original.role;
+    form.teamId = original.teamId;
     resetAvatarState();
     formRef.value?.resetValidation();
   });
@@ -82,7 +93,8 @@
     () =>
       form.name.trim() !== original.name.trim() ||
       form.email.trim() !== original.email.trim() ||
-      (canChangeRole.value && form.isSuperAdmin !== original.isSuperAdmin) ||
+      (canChangeRole.value &&
+        (form.role !== original.role || form.teamId !== original.teamId)) ||
       Boolean(pickedAvatar.value) ||
       removeAvatar.value,
   );
@@ -104,8 +116,14 @@
         email: form.email.trim(),
         avatar: pickedAvatar.value,
         removeAvatar: removeAvatar.value,
-        // Omitted entirely on your own row, so the request cannot 403.
-        isSuperAdmin: canChangeRole.value ? form.isSuperAdmin : undefined,
+        // All three omitted on your own row, so the request cannot 403.
+        // `role` splits back into the global flag and the in-team role, which
+        // is how the backend models them.
+        isSuperAdmin: canChangeRole.value
+          ? form.role === "super-admin"
+          : undefined,
+        teamId: canChangeRole.value ? form.teamId : undefined,
+        teamRole: form.role === "super-admin" ? undefined : form.role,
       });
 
       emit("updated");
@@ -138,21 +156,15 @@
 
         <UserFields
           v-model:email="form.email"
-          v-model:is-super-admin="form.isSuperAdmin"
           v-model:name="form.name"
+          v-model:role="form.role"
+          v-model:team-id="form.teamId"
           :role-disabled="!canChangeRole"
         />
 
-        <v-text-field
-          disabled
-          :label="t('admin.users.createdAt')"
-          :model-value="formatDateTime(user.created_at)"
-        />
-
-        <v-text-field
-          disabled
-          :label="t('admin.users.updatedAt')"
-          :model-value="formatDateTime(user.updated_at)"
+        <TimestampFields
+          :created="user.created_at"
+          :updated="user.updated_at"
         />
       </v-card-text>
 
