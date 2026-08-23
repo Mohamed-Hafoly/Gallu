@@ -12,7 +12,7 @@
 </script>
 
 <template>
-  <div class="mt-5 mb-4 text-caption">{{ t("gallery.description") }}</div>
+  <div class="mt-7 mb-2 text-lg font-semibold">{{ t("gallery.description") }}</div>
 
   <v-textarea
     v-if="editable"
@@ -26,10 +26,10 @@
     :rules="descriptionRules"
   />
 
+  <!-- Physical indent, not logical — see the note in ReadOnlyField.vue. -->
   <p
     v-else
-    class="text-body-2 ms-2"
-    :class="isRtl ? 'text-right' : 'text-left'"
+    :class="isRtl ? 'text-right mr-2' : 'text-left ml-2'"
     dir="auto"
   >
     {{ model || t("gallery.noDescription") }}

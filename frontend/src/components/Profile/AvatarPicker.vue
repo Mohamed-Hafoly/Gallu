@@ -128,6 +128,6 @@
       @change="onFileSelected"
     />
 
-    <p v-if="fileError" class="text-caption text-error">{{ fileError }}</p>
+    <p v-if="fileError" class="text-error">{{ fileError }}</p>
   </div>
 </template>

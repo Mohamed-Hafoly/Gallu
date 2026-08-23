@@ -3,12 +3,13 @@
   import { onMounted, ref } from "vue";
   import { useI18n } from "vue-i18n";
   import { useRtl } from "vuetify";
+  import { useDateFormat } from "@/composables/useDateFormat";
   import { useImageStore } from "@/stores/image";
   import { useNotifierStore } from "@/stores/notifier";
 
   const { t } = useI18n();
-  const {
-    isRtl } = useRtl();
+  const { isRtl } = useRtl();
+  const { formatRelative } = useDateFormat();
   const imageStore = useImageStore();
   const notifier = useNotifierStore();
 
@@ -24,7 +25,7 @@
   }
 
   function onDeleted(id: number) {
-    images.value = images.value.filter(image => image.id !== id);
+    images.value = images.value.filter((image) => image.id !== id);
     notifier.notify(t("gallery.deleted"));
   }
 
@@ -69,7 +70,7 @@
       {{ t("gallery.empty") }}
     </p>
 
-    <v-row v-else class="mt-2" :gap=[8,13] >
+    <v-row v-else class="mt-2" :gap="[8, 13]">
       <v-col
         v-for="image in images"
         :key="image.id"
@@ -79,7 +80,7 @@
         sm="6"
         xl="2"
       >
-        <v-card class="d-flex flex-column h-full" @click="openDetail(image)">
+        <v-card class="flex flex-col h-full" @click="openDetail(image)">
           <v-img
             :alt="image.title"
             :aspect-ratio="3 / 2"
@@ -87,7 +88,7 @@
             :src="image.thumb_url"
           >
             <template #placeholder>
-              <div class="d-flex align-center justify-center fill-height">
+              <div class="flex items-center justify-center h-full">
                 <v-progress-circular indeterminate />
               </div>
             </template>
@@ -98,14 +99,26 @@
             useRtl() keeps every card pinned to the UI edge regardless.
           -->
           <v-card-title
-            class="p-3 text-body-1 font-weight-medium text-truncate"
+            class="p-3 pb-1 font-medium"
             :class="isRtl ? 'text-right' : 'text-left'"
             dir="auto"
           >
             {{ image.title }}
           </v-card-title>
 
-          <v-card-text>
+          <v-card-subtitle
+            :class="isRtl ? 'text-right mr-1' : 'text-left ml-1'" dir="auto"
+          >
+            {{ image.creator }}
+          </v-card-subtitle>
+
+          <!--
+            flex-col so the timestamp's mt-auto can push it to the bottom.
+            v-card-text is already flex:1 1 auto inside the card's column, so it
+            fills the leftover height and the timestamp lands on the card's floor
+            no matter how many lines the chips or description take.
+          -->
+          <v-card-text class="pb-2 flex flex-col">
             <CategoryChips :items="image.categories" />
 
             <!--
@@ -113,11 +126,24 @@
               useRtl() keeps every card's text pinned to the UI edge regardless.
             -->
             <p
-              class="mt-2 text-body-2 line-clamp-2 "
+              class="mt-4 line-clamp-2"
               :class="isRtl ? 'text-right' : 'text-left'"
               dir="auto"
             >
               {{ image.description || t("gallery.noDescription") }}
+            </p>
+
+            <!--
+              No dir="auto" here, unlike the lines above: Intl.RelativeTimeFormat
+              renders in the active locale, so this string's script always
+              matches the UI and dir="auto" would be inert. Only user-supplied
+              text (title, description, creator) can disagree with the UI.
+            -->
+            <p
+              class="mt-auto pt-4 text-sm opacity-70"
+              :class="isRtl ? 'text-right' : 'text-left'"
+            >
+              {{ formatRelative(image.created_at) }}
             </p>
           </v-card-text>
         </v-card>

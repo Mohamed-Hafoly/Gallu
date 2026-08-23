@@ -8,6 +8,7 @@
     "cancel": "إلغاء",
     "save": "حفظ",
     "create": "إنشاء",
+    "lessThanAMinuteAgo": "قبل أقل من دقيقة",
     "createdAt": "تاريخ الإنشاء",
     "updatedAt": "آخر تحديث"
   },
@@ -147,6 +148,7 @@
     "description": "الوصف",
     "descriptionPlaceholder": "أوصف صورتك...",
     "categories": "التصنيفات",
+    "creator": "المنشئ",
     "noDescription": "لا يوجد وصف بعد.",
     "noCategories": "لا توجد تصنيفات بعد.",
     "editUnavailable": "التعديل غير متاح بعد.",

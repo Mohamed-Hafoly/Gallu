@@ -18,18 +18,22 @@ beforeEach(() => {
   i18n.global.locale.value = "en";
 });
 
+// The caption is matched by element, not by a styling class: Vuetify's utility
+// classes emit no CSS at all here (styles/settings.scss sets `$utilities:
+// false`), so `text-caption` was stripped app-wide as dead markup. The editable
+// branch renders exactly one <p> — CategoryPicker renders only chips.
 describe("editable mode caption", () => {
   it("renders exactly one caption line, not a hint and an error stacked", () => {
     // Regression: the hint and the error were previously two separate <p>s
     // showing the same sentence twice after a failed submit.
     const wrapper = mountField({ error: "Select at least one category" });
-    const captions = wrapper.findAll("p.text-caption");
+    const captions = wrapper.findAll("p");
 
     expect(captions).toHaveLength(1);
   });
 
   it("shows the neutral hint, muted, when there is no error", () => {
-    const caption = mountField().find("p.text-caption");
+    const caption = mountField().find("p");
 
     expect(caption.text()).toBe(i18n.global.t("gallery.categoriesHint"));
     expect(caption.classes()).toContain("opacity-70");
@@ -38,7 +42,7 @@ describe("editable mode caption", () => {
 
   it("swaps to the error text and error colour when an error is set", () => {
     const caption = mountField({ error: "Select at least one category" })
-      .find("p.text-caption");
+      .find("p");
 
     expect(caption.text()).toBe("Select at least one category");
     expect(caption.classes()).toContain("text-error");

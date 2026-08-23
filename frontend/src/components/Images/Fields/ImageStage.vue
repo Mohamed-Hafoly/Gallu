@@ -14,7 +14,7 @@
   <div class="bg-black">
     <v-img :alt="alt" :aspect-ratio="3 / 2" contain :src="src">
       <template #placeholder>
-        <div class="d-flex align-center justify-center fill-height">
+        <div class="flex items-center justify-center h-full">
           <v-progress-circular indeterminate />
         </div>
       </template>

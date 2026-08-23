@@ -17,7 +17,7 @@
 <template>
   <v-dialog v-model="open" max-width="400">
     <v-card class="border-2 border-tertiary" rounded="md">
-      <v-card-text class="text-body-2">{{ message }}</v-card-text>
+      <v-card-text>{{ message }}</v-card-text>
 
       <v-card-actions>
         <v-spacer />

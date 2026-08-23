@@ -7,5 +7,8 @@ export interface Image {
   url: string;
   thumb_url: string;
   categories: Category[];
+  // Required, not optional: images.user_id is NOT NULL, and ImageResource
+  // serves `creator` unconditionally rather than behind whenLoaded().
+  creator: string;
   created_at: string;
 }

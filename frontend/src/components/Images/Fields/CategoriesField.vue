@@ -14,21 +14,34 @@
 
 <template>
   <div>
-    <div class="mb-4 mt-4 text-caption">{{ t("gallery.categories") }}</div>
+    <div class="mb-2 text-lg font-semibold">
+      {{ t("gallery.categories") }}
+    </div>
 
-    <CategoryPicker v-if="editable" v-model="selectedCategoryIds" class="ms-2" :items="items" />
+    <CategoryPicker
+      v-if="editable"
+      v-model="selectedCategoryIds"
+      class="ms-2"
+      :items="items"
+    />
 
     <p
       v-if="editable"
-      class="ms-2 text-caption"
+      class="ms-2"
       :class="error ? 'text-error' : 'opacity-70'"
     >
       {{ error || t("gallery.categoriesHint") }}
     </p>
 
     <template v-else>
-      <CategoryChips v-if="items.length > 0" class="ms-2" :items="items" :limit="0" />
-      <p v-else class="text-body-2 ms-2">{{ t("gallery.noCategories") }}</p>
+      <CategoryChips
+        v-if="items.length > 0"
+        class="ms-2"
+        :items="items"
+        :limit="0"
+      />
+
+      <p v-else class="ms-2">{{ t("gallery.noCategories") }}</p>
     </template>
   </div>
 </template>

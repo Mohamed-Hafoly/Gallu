@@ -8,6 +8,7 @@
     "cancel": "Cancel",
     "save": "Save",
     "create": "Create",
+    "lessThanAMinuteAgo": "less than a minute ago",
     "createdAt": "Created At",
     "updatedAt": "Last updated"
   },
@@ -147,6 +148,7 @@
     "description": "Description",
     "descriptionPlaceholder": "Decribe your image...",
     "categories": "Categories",
+    "creator": "Creator",
     "noDescription": "No description yet.",
     "noCategories": "No categories yet.",
     "editUnavailable": "Editing is not available yet.",

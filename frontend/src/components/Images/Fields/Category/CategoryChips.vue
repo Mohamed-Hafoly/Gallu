@@ -9,7 +9,7 @@
       /** Chips to show before collapsing the rest into "+N". 0 shows them all. */
       limit?: number;
     }>(),
-    { limit: 5 },
+    { limit: 4 },
   );
 
   const localizedName = useLocalizedName();
@@ -22,7 +22,7 @@
 </script>
 
 <template>
-  <div class="flex gap-2" :class="capped ? 'overflow-hidden' : 'flex-wrap'">
+  <div class="flex gap-2 flex-wrap">
     <v-chip
       v-for="item in shown"
       :key="item.id"

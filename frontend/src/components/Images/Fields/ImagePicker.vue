@@ -92,7 +92,7 @@
   >
     <v-icon color="on-surface" icon="mdi-image-plus" size="32" />
 
-    <span class="text-caption text-center opacity-70">{{
+    <span class="text-center opacity-70">{{
       t("gallery.chooseImage")
     }}</span>
   </div>
@@ -105,7 +105,7 @@
     @change="onFileSelected"
   />
 
-  <p v-if="fileError" class="ms-2 mt-1 text-caption text-error">
+  <p v-if="fileError" class="ms-2 mt-1 text-error">
     {{ fileError }}
   </p>
 </template>

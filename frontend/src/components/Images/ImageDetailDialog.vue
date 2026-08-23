@@ -4,6 +4,7 @@
   import type { VForm } from "vuetify/components";
   import { computed, onMounted, reactive, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
+  import { useDateFormat } from "@/composables/useDateFormat";
   import { useCategoryStore } from "@/stores/category";
   import { useImageStore } from "@/stores/image";
   import { useNotifierStore } from "@/stores/notifier";
@@ -20,6 +21,7 @@
   const open = defineModel<boolean>({ default: false });
 
   const { t } = useI18n();
+  const { formatDateTime } = useDateFormat();
   const categoryStore = useCategoryStore();
   const imageStore = useImageStore();
   const notifier = useNotifierStore();
@@ -179,9 +181,19 @@
         :initial-src="image.url"
       />
 
-      <TitleField v-model="form.title" class="mt-4" :editable="isEditing" />
+      <TitleField v-model="form.title" class="mt-4 font-bold" :editable="isEditing" />
 
-      <v-card-text>
+      <v-card-text class="text-base">
+        <!--
+          Both ReadOnlyFields sit outside the edit flow — they touch neither
+          `form` nor `original`, so they cannot make isDirty report a change.
+        -->
+        <ReadOnlyField
+          :editable="isEditing"
+          :label="t('gallery.creator')"
+          :value="image.creator"
+        />
+
         <CategoriesField
           v-model="form.selectedCategoryIds"
           class="mt-5"
@@ -191,10 +203,16 @@
         />
 
         <DescriptionField v-model="form.description" :editable="isEditing" />
+
+        <ReadOnlyField
+          :editable="isEditing"
+          :label="t('common.createdAt')"
+          :value="formatDateTime(image.created_at)"
+        />
       </v-card-text>
 
       <v-card-actions
-        class="flex-row align-center justify-between [direction:ltr]"
+        class="flex-row items-center justify-between [direction:ltr]"
       >
         <v-btn
           color="error"

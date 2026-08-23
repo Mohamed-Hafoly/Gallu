@@ -14,7 +14,7 @@
 <template>
   <v-dialog v-model="open" :max-width="maxWidth">
     <v-card class="border-2 border-tertiary p-2" rounded="md">
-      <v-card-title class="text-h6 tracking-wider text-center mt-2">{{
+      <v-card-title class="tracking-wider text-center mt-2">{{
         title
       }}</v-card-title>
 

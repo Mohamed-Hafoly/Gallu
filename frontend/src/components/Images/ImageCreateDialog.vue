@@ -103,7 +103,7 @@
         editable
       />
 
-      <p v-if="fileError" class="ms-4 mt-1 text-caption text-error">
+      <p v-if="fileError" class="ms-4 mt-1 text-error">
         {{ fileError }}
       </p>
 
@@ -120,7 +120,18 @@
         <DescriptionField v-model="form.description" editable />
       </v-card-text>
 
-      <v-card-actions class="gap-5 flex [justify-content:right]">
+      <!--
+        [direction:ltr] with Cancel before the primary action, matching
+        ImageDetailDialog's action row. Without it the flex main axis follows
+        the UI direction, so the fixed DOM order rendered Create on the right in
+        Arabic but on the left in English — the buttons visibly swapped places
+        between locales. justify-end resolves against the forced ltr here.
+      -->
+      <v-card-actions class="gap-5 flex justify-end [direction:ltr]">
+        <v-btn :disabled="submitting" variant="flat" @click="close">
+          {{ t("common.cancel") }}
+        </v-btn>
+
         <v-btn
           color="primary"
           :disabled="!canSubmit"
@@ -133,10 +144,6 @@
           <template #loader>
             <v-progress-circular color="tertiary" indeterminate width="3" />
           </template>
-        </v-btn>
-
-        <v-btn :disabled="submitting" variant="flat" @click="close">
-          {{ t("common.cancel") }}
         </v-btn>
       </v-card-actions>
     </v-form>
