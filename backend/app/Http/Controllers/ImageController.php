@@ -17,7 +17,7 @@ class ImageController extends Controller
     {
         $images = $request->user()
             ->images()
-            ->with(['categories', 'media'])
+            ->with(['categories', 'media', 'user'])
             ->latest()
             ->get();
 
@@ -37,7 +37,7 @@ class ImageController extends Controller
 
         $image->categories()->sync($request->input('selected_category_ids'));
 
-        return new ImageResource($image->load(['categories', 'media']));
+        return new ImageResource($image->load(['categories', 'media', 'user']));
     }
 
     public function update(UpdateImageRequest $request, Image $image): ImageResource
@@ -56,7 +56,7 @@ class ImageController extends Controller
 
         $image->categories()->sync($request->input('selected_category_ids'));
 
-        return new ImageResource($image->load(['categories', 'media']));
+        return new ImageResource($image->load(['categories', 'media', 'user']));
     }
 
     public function destroy(Request $request, Image $image): Response

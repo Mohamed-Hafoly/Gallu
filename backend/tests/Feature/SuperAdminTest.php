@@ -3,6 +3,7 @@
 use App\Enums\RoleName;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Database\Eloquent\MassAssignmentException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use Spatie\Permission\Models\Role;
@@ -66,15 +67,20 @@ it('fails for an unknown email and promotes nobody', function () {
 
 // The flag is not fillable, so registration and the profile update cannot
 // smuggle it in. This is the privilege-escalation guard.
+//
+// Since AppServiceProvider enables Model::shouldBeStrict() outside production,
+// the attempt now throws rather than being silently discarded — a stronger
+// guarantee, and the reason this asserts an exception instead of a false flag.
+// No user is written at all, so there is nothing left to escalate.
 it('refuses to mass-assign the super admin flag', function () {
-    $user = User::create([
+    expect(fn () => User::create([
         'name' => 'Sneaky User',
         'email' => 'sneaky@example.com',
         'password' => 'password',
         'is_super_admin' => true,
-    ]);
+    ]))->toThrow(MassAssignmentException::class);
 
-    expect($user->fresh()->is_super_admin)->toBeFalse();
+    expect(User::where('email', 'sneaky@example.com')->exists())->toBeFalse();
 });
 
 it('grants a super admin an ability that has no gate or policy defined', function () {

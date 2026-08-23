@@ -36,7 +36,8 @@ it('uploads an image into the images table', function () {
     actingAs($user)
         ->postJson('/api/images', validImagePayload())
         ->assertCreated()
-        ->assertJsonPath('data.title', 'My photo');
+        ->assertJsonPath('data.title', 'My photo')
+        ->assertJsonPath('data.creator', $user->name);
 
     expect(Image::count())->toBe(1);
 
@@ -152,7 +153,26 @@ it('lists only the images belonging to the authenticated user', function () {
         ->getJson('/api/images')
         ->assertOk()
         ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.title', 'Mine');
+        ->assertJsonPath('data.0.title', 'Mine')
+        ->assertJsonPath('data.0.creator', $user->name);
+});
+
+// ImageResource serves `creator` unconditionally, so it is part of the contract
+// on every row rather than something the caller can omit. Several images, not
+// one: the lazy-loading guard is only armed for queries returning more than one
+// model, so dropping ->with('user') from the controller has to fail here.
+it('returns a creator on every row of a multi image listing', function () {
+    $user = User::factory()->create();
+    Image::factory()->count(3)->for($user)->create();
+
+    $rows = actingAs($user)
+        ->getJson('/api/images')
+        ->assertOk()
+        ->assertJsonCount(3, 'data')
+        ->json('data');
+
+    expect($rows)->each->toHaveKey('creator');
+    expect(array_column($rows, 'creator'))->toBe(array_fill(0, 3, $user->name));
 });
 
 it('does not let a user delete someone elses image', function () {
