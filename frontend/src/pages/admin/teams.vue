@@ -359,10 +359,16 @@
         <!-- Restoring is not destructive, so it fires straight away where the
              bulk delete above asks for confirmation first. -->
         <div v-if="selectedTrashed.length > 0" class="p-3">
+          <!--
+            The loader colour rides on `loading` rather than a #loader slot:
+            VBtn forwards that prop as the spinner's colour only when it is a
+            string, so a bare boolean would let the spinner inherit the global
+            tertiary default and vanish against this button's tertiary fill.
+          -->
           <v-btn
             block
             color="tertiary"
-            :loading="bulkInFlight"
+            :loading="bulkInFlight ? 'on-tertiary' : false"
             prepend-icon="mdi-restore"
             variant="elevated"
             @click="bulkRestore"

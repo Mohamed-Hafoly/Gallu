@@ -105,12 +105,15 @@
         <v-card-actions>
           <v-btn
             block
-            class="bg-tertiary text-on-tertiary"
+            color="tertiary"
             prepend-icon="mdi-logout"
             @click="logout()"
           >
             <template #loader>
-              <v-progress-circular color="tertiary" indeterminate width="3" />
+              <!-- on-tertiary, not the tertiary default: this button is
+                   color="tertiary", so an inherited spinner would be
+                   invisible against its own fill. -->
+              <v-progress-circular color="on-tertiary" indeterminate />
             </template>
             {{ t("auth.logout") }}
           </v-btn>

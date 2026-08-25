@@ -88,7 +88,7 @@
           variant="elevated"
         >
           <template #loader>
-            <v-progress-circular color="tertiary" indeterminate width="3" />
+            <v-progress-circular indeterminate />
           </template>
           {{ t("common.create") }}
         </v-btn>

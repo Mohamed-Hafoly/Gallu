@@ -7,8 +7,18 @@ export interface Image {
   url: string;
   thumb_url: string;
   categories: Category[];
+  /** Every image belongs to exactly one document; images.document_id is NOT NULL. */
+  document_id: number;
   // Required, not optional: images.user_id is NOT NULL, and ImageResource
   // serves `creator` unconditionally rather than behind whenLoaded().
   creator: string;
   created_at: string;
+  updated_at: string;
+  /**
+   * Set only on a soft-deleted image, which is what splits the admin screen's
+   * live and pending-deletion tables. Optional rather than nullable-required:
+   * the gallery's listing never contains a trashed row, so it is `null` there
+   * and there is no point making every caller acknowledge it.
+   */
+  deleted_at?: string | null;
 }

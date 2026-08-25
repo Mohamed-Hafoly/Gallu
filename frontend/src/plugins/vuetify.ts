@@ -18,7 +18,7 @@ export default createVuetify({
     variations: {
       colors: ["primary", "surface", "tertiary"],
       lighten: 0,
-      darken: 2,
+      darken: 4,
     },
     themes: {
       dark: {
@@ -42,6 +42,24 @@ export default createVuetify({
     VSelect: {
       variant: "outlined",
       color: "tertiary",
+    },
+
+    // The two progress components deliberately differ: bars are primary,
+    // reading as page-level chrome, while spinners are tertiary to match the
+    // form-control accent above — most of them sit inside buttons.
+    //
+    // Set here so every call site resolves from one place. A prop still wins
+    // where an instance must differ: see the on-tertiary spinners on the two
+    // buttons that themselves have a tertiary background.
+    VProgressLinear: {
+      color: "primary",
+    },
+
+    VProgressCircular: {
+      color: "tertiary",
+      // Was repeated on all ten button loaders; defaulting it also normalises
+      // the v-img placeholders, which were on Vuetify's thicker default of 4.
+      width: 3,
     },
   },
   display: {

@@ -134,11 +134,7 @@
             type="submit"
             >{{ t("auth.register") }}
             <template #loader>
-              <v-progress-circular
-                color="tertiary"
-                indeterminate
-                width="3"
-              /> </template
+              <v-progress-circular indeterminate /> </template
           ></v-btn>
 
           <p class="text-center text-base mt-6">

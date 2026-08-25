@@ -132,7 +132,7 @@
     :title="t('admin.teams.membersTitle', { name: team.name })"
   >
     <v-card-text class="flex flex-col gap-4 ">
-      <v-progress-linear v-if="loading" color="tertiary" indeterminate />
+      <v-progress-linear v-if="loading" indeterminate />
 
       <MemberPicker
         v-else

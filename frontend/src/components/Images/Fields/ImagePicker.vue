@@ -74,7 +74,9 @@
     @click="pickFile"
   >
     <template #loader>
-      <v-progress-circular color="tertiary" indeterminate width="3" />
+      <!-- on-tertiary, not the tertiary default: this button is itself
+           color="tertiary", so an inherited spinner would be invisible. -->
+      <v-progress-circular color="on-tertiary" indeterminate />
     </template>
     {{ t("gallery.changeImage") }}
   </v-btn>

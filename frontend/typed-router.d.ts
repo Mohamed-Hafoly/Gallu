@@ -66,6 +66,20 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'admin-documents': RouteRecordInfo<
+      'admin-documents',
+      '/admin/documents',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'admin-images': RouteRecordInfo<
+      'admin-images',
+      '/admin/images',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'admin-teams': RouteRecordInfo<
       'admin-teams',
       '/admin/teams',
@@ -78,6 +92,20 @@ declare module 'vue-router/auto-routes' {
       '/admin/users',
       Record<never, never>,
       Record<never, never>,
+      | never
+    >,
+    'documents': RouteRecordInfo<
+      'documents',
+      '/documents',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/documents/[id]': RouteRecordInfo<
+      '/documents/[id]',
+      '/documents/:id',
+      { id: ParamValue<true> },
+      { id: ParamValue<false> },
       | never
     >,
     'gallery': RouteRecordInfo<
@@ -147,6 +175,22 @@ declare module 'vue-router/auto-routes' {
       pathParamNames:
         | never
     }
+    'src/pages/admin/documents.vue': {
+      routes:
+        | 'admin-documents'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/admin/images.vue': {
+      routes:
+        | 'admin-images'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
     'src/pages/admin/teams.vue': {
       routes:
         | 'admin-teams'
@@ -162,6 +206,22 @@ declare module 'vue-router/auto-routes' {
         | never
       pathParamNames:
         | never
+    }
+    'src/pages/documents/index.vue': {
+      routes:
+        | 'documents'
+      views:
+        | never
+      pathParamNames:
+        | never
+    }
+    'src/pages/documents/[id].vue': {
+      routes:
+        | '/documents/[id]'
+      views:
+        | never
+      pathParamNames:
+        | 'id'
     }
     'src/pages/gallery/index.vue': {
       routes:

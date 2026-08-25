@@ -33,7 +33,19 @@ describe("fetchImages", () => {
     mockedApi.get.mockResolvedValue({ data: { data: images } });
 
     await expect(useImageStore().fetchImages()).resolves.toEqual(images);
-    expect(mockedApi.get).toHaveBeenCalledWith("/api/images");
+    expect(mockedApi.get).toHaveBeenCalledWith("/api/images", { params: {} });
+  });
+
+  // /documents/[id] passes its route param through; the backend applies it
+  // after the team scope, so it narrows and can never widen.
+  it("sends document_id when scoping to one document", async () => {
+    mockedApi.get.mockResolvedValue({ data: { data: [] } });
+
+    await useImageStore().fetchImages(7);
+
+    expect(mockedApi.get).toHaveBeenCalledWith("/api/images", {
+      params: { document_id: 7 },
+    });
   });
 });
 
@@ -44,6 +56,7 @@ describe("createImage", () => {
     await useImageStore().createImage({
       title: "Beach Sunset",
       description: "A description",
+      document_id: 4,
       selected_category_ids: [3, 7],
       image: new File(["x"], "photo.jpg", { type: "image/jpeg" }),
     });
@@ -55,6 +68,7 @@ describe("createImage", () => {
     expect(fields.title).toEqual(["Beach Sunset"]);
     expect(fields.description).toEqual(["A description"]);
     expect(fields["selected_category_ids[]"]).toEqual(["3", "7"]);
+    expect(fields.document_id).toEqual(["4"]);
     expect(fields.image).toHaveLength(1);
   });
 
@@ -63,6 +77,7 @@ describe("createImage", () => {
 
     await useImageStore().createImage({
       title: "No description",
+      document_id: 4,
       selected_category_ids: [1],
       image: new File(["x"], "photo.jpg", { type: "image/jpeg" }),
     });

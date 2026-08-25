@@ -7,6 +7,13 @@
   import { useImageStore } from "@/stores/image";
   import { useNotifierStore } from "@/stores/notifier";
 
+  /**
+   * The document to upload into, taken from the route by the caller rather than
+   * chosen here: every image belongs to exactly one document, and the only way
+   * to reach this dialog is from inside that document's page.
+   */
+  const props = defineProps<{ documentId: number }>();
+
   const emit = defineEmits<{
     created: [];
   }>();
@@ -80,6 +87,7 @@
       // space as it is typed.
       await imageStore.createImage({
         title: form.title.trim(),
+        document_id: props.documentId,
         description: form.description.trim() || undefined,
         selected_category_ids: form.selectedCategoryIds,
         image: selectedFile.value,
@@ -142,7 +150,7 @@
         >
           {{ t("common.create") }}
           <template #loader>
-            <v-progress-circular color="tertiary" indeterminate width="3" />
+            <v-progress-circular indeterminate />
           </template>
         </v-btn>
       </v-card-actions>

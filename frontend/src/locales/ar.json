@@ -21,7 +21,9 @@
     "backToGallery": "العودة إلى المعرض",
     "categories": "التصنيفات",
     "teams": "الفرق",
-    "users": "المستخدمون"
+    "users": "المستخدمون",
+    "documents": "المستندات",
+    "images": "الصور"
   },
   "admin": {
     "categories": {
@@ -57,6 +59,60 @@
       "bulkDeleteFailed": "تعذّر حذف بعض التصنيفات ({count})",
       "bulkRestored": "تمت استعادة التصنيفات المحددة ({count})",
       "bulkRestoreFailed": "تعذّرت استعادة بعض التصنيفات ({count})"
+    },
+    "documents": {
+      "title": "المستندات",
+      "search": "ابحث في المستندات",
+      "id": "المعرف",
+      "documentTitle": "العنوان",
+      "description": "الوصف",
+      "team": "الفريق",
+      "creator": "المنشئ",
+      "actions": "الإجراءات",
+      "empty": "لا توجد مستندات بعد",
+      "add": "إضافة مستند",
+      "view": "فتح المستند",
+      "noImages": "لا توجد صور في هذا المستند بعد",
+      "imagesTitle": "صور هذا المستند",
+      "deleteSelected": "حذف المحدد ({count})",
+      "images": {
+        "thumb": "معاينة",
+        "id": "المعرف",
+        "title": "العنوان",
+        "creator": "رفعها",
+        "createdAt": "تاريخ الرفع"
+      }
+    },
+    "images": {
+      "title": "الصور",
+      "search": "ابحث في الصور بالعنوان أو المنشئ أو المستند",
+      "id": "المعرف",
+      "thumb": "الصورة",
+      "imageTitle": "العنوان",
+      "description": "الوصف",
+      "creator": "المنشئ",
+      "document": "المستند",
+      "actions": "الإجراءات",
+      "empty": "لا توجد صور بعد",
+      "trashedTitle": "في انتظار الحذف",
+      "trashedTitleNote": "سيتم حذف هذه الصور نهائيًا بعد 24 ساعة.",
+      "trashedEmpty": "لا شيء في انتظار الحذف",
+      "deletedAt": "تاريخ الحذف",
+      "open": "فتح",
+      "restore": "استعادة",
+      "restored": "تمت استعادة الصورة",
+      "restoreFailed": "تعذرت استعادة الصورة",
+      "updated": "تم تحديث الصورة",
+      "deleteConfirm": "حذف {title}؟ ستنتقل إلى قائمة الانتظار ويمكن استعادتها.",
+      "deleted": "تم حذف الصورة",
+      "deleteFailed": "تعذر حذف الصورة",
+      "deleteSelected": "حذف المحدد ({count})",
+      "restoreSelected": "استعادة المحدد ({count})",
+      "bulkDeleteConfirm": "حذف الصور المحددة ({count})؟ ستنتقل إلى قائمة الانتظار ويمكن استعادتها.",
+      "bulkDeleted": "تم حذف الصور المحددة ({count})",
+      "bulkDeleteFailed": "تعذر حذف بعض الصور ({count})",
+      "bulkRestored": "تمت استعادة الصور المحددة ({count})",
+      "bulkRestoreFailed": "تعذرت استعادة بعض الصور ({count})"
     },
     "users": {
       "title": "المستخدمون",
@@ -167,6 +223,13 @@
     "chooseImage": "إختر صورة",
     "changeImage": "تغيير الصورة",
     "saved": "تم حفظ التغييرات"
+  },
+  "documents": {
+    "title": "المستندات",
+    "empty": "لا توجد مستندات بعد.",
+    "imageCount": "لا توجد صور | صورة واحدة | صورتان | {count} صور | {count} صورة | {count} صورة",
+    "backToDocuments": "كل المستندات",
+    "forbidden": "ليس لديك صلاحية الوصول إلى هذا المستند."
   },
   "profile": {
     "title": "معلومات الحساب",

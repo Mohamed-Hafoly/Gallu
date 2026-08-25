@@ -24,6 +24,11 @@ export function useNavLinks() {
       props: { to: { name: "gallery" }, prependIcon: "mdi-image-multiple" },
     },
     {
+      title: t("nav.documents"),
+      value: "/documents",
+      props: { to: { name: "documents" }, prependIcon: "mdi-folder-multiple" },
+    },
+    {
       title: t("nav.settings"),
       value: "/settings",
       props: { to: { name: "settings" }, prependIcon: "mdi-cog" },
@@ -56,6 +61,22 @@ export function useNavLinks() {
       props: {
         to: { name: "admin-users" },
         prependIcon: "mdi-account-multiple",
+      },
+    },
+    {
+      title: t("nav.documents"),
+      value: "/admin/documents",
+      props: {
+        to: { name: "admin-documents" },
+        prependIcon: "mdi-folder-multiple",
+      },
+    },
+    {
+      title: t("nav.images"),
+      value: "/admin/images",
+      props: {
+        to: { name: "admin-images" },
+        prependIcon: "mdi-image-multiple",
       },
     },
     {
