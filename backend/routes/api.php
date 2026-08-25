@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\ImageController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TeamMemberController;
@@ -17,6 +18,19 @@ Route::middleware(['auth:sanctum', SetPermissionsTeam::class])->group(function (
     Route::post('/images', [ImageController::class, 'store']);
     Route::patch('/images/{image}', [ImageController::class, 'update']);
     Route::delete('/images/{image}', [ImageController::class, 'destroy']);
+    // withTrashed(), like the category and team restore routes: without it the
+    // soft-deleted image the admin screen is trying to restore 404s at binding.
+    Route::post('/images/{image}/restore', [ImageController::class, 'restore'])->withTrashed();
+
+    // A document groups existing images rather than owning uploads of its own,
+    // so these are plain JSON — no multipart POST spoofing PATCH like /images.
+    Route::get('/documents', [DocumentController::class, 'index']);
+    Route::get('/documents/{document}', [DocumentController::class, 'show']);
+    Route::post('/documents', [DocumentController::class, 'store']);
+    Route::patch('/documents/{document}', [DocumentController::class, 'update']);
+    Route::delete('/documents/{document}', [DocumentController::class, 'destroy']);
+    Route::post('/documents/{document}', [DocumentController::class, 'restore']);
+
 
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/categories/picker', [CategoryController::class, 'picker']);

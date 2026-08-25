@@ -2,33 +2,142 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\IndexImageRequest;
 use App\Http\Requests\StoreImageRequest;
 use App\Http\Requests\UpdateImageRequest;
 use App\Http\Resources\ImageResource;
+use App\Models\Document;
 use App\Models\Image;
-use Illuminate\Http\Request;
+use App\Models\User;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
 class ImageController extends Controller
 {
-    public function index(Request $request): AnonymousResourceCollection
-    {
-        $images = $request->user()
-            ->images()
-            ->with(['categories', 'media', 'user'])
-            ->latest()
-            ->get();
+    /**
+     * Columns the admin tables may sort on. Anything else is a 422 from
+     * IndexImageRequest rather than an injectable orderBy.
+     *
+     * `creator` is not a column - see index(), which maps it to a subquery.
+     *
+     * @var list<string>
+     */
+    public const SORTABLE = ['id', 'title', 'creator', 'document_id', 'created_at', 'updated_at', 'deleted_at'];
 
-        return ImageResource::collection($images);
+    /**
+     * The API's name for the image owner's name, which lives on `users`.
+     */
+    public const CREATOR_SORT = 'creator';
+
+    /**
+     * What the table's "All" option sends for per_page.
+     */
+    public const ALL_PER_PAGE = -1;
+
+    public function index(IndexImageRequest $request): AnonymousResourceCollection
+    {
+        Gate::authorize('viewAny', Image::class);
+
+        $trashed = $request->input('trashed');
+
+        // Authorised rather than silently ignored: a member who forges the flag
+        // should be told no, not handed a quietly narrower list they cannot
+        // distinguish from an empty trash.
+        if ($trashed !== null) {
+            Gate::authorize('viewTrashed', Image::class);
+        }
+
+        $search = $request->string('search')->trim()->toString();
+        $sortBy = $request->input('sort_by') ?: 'id';
+        $direction = $request->input('sort_order') ?: 'asc';
+
+        // Team-scoped, not owner-scoped: a member sees their teammates' images
+        // too, they simply cannot edit them.
+        $query = Image::query()
+            ->visibleTo($request->user())
+            // Widens which rows survive the soft-delete scope, never which team
+            // they belong to - visibleTo() has already narrowed that, and this
+            // runs after it. The gallery sends no `trashed`, so deleted images
+            // stay out of /gallery and /documents/{id}.
+            ->when($trashed === 'with', fn ($builder) => $builder->withTrashed())
+            ->when($trashed === 'only', fn ($builder) => $builder->onlyTrashed())
+            // Applied after the scope, never instead of it, so filtering by
+            // another team's document id returns nothing rather than leaking.
+            ->when(
+                $request->filled('document_id'),
+                fn ($builder) => $builder->where('document_id', $request->integer('document_id')),
+            )
+            // Grouped, so the ORs cannot escape the scope above and turn a
+            // search into a cross-team read.
+            ->when($search !== '', fn ($builder) => $builder->where(
+                fn ($grouped) => $grouped
+                    ->where('title', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('user', fn ($user) => $user->where('name', 'like', "%{$search}%"))
+                    // Exact, and only for a numeric term: `like` on an integer
+                    // column would make a search for "1" match documents 1, 10,
+                    // 11 and 21, which reads as a broken filter.
+                    ->when(
+                        ctype_digit($search),
+                        fn ($grouped) => $grouped->orWhere('document_id', (int) $search),
+                    )
+            ))
+            ->with(['categories', 'media', 'user']);
+
+        // `creator` is the API's name for the owner's name, which lives on
+        // `users`. A correlated subselect rather than a join, so the sort cannot
+        // duplicate rows when an image has several media or categories - the
+        // same technique User::scopeWithTeamAssignment() uses.
+        $query->when(
+            $sortBy === self::CREATOR_SORT,
+            fn ($builder) => $builder->orderBy(
+                User::select('name')->whereColumn('users.id', 'images.user_id'),
+                $direction,
+            ),
+            fn ($builder) => $builder->orderBy($sortBy, $direction),
+        );
+
+        // Absent means *everything*, unlike IndexUserRequest's caller, which
+        // always pages. This endpoint has a second caller - the gallery, which
+        // sends only document_id and expects a document's whole set. Letting
+        // paginate() fall back to the model's per-page would silently cap that
+        // at 15 and lose images from any document larger than that. An explicit
+        // 0 cannot reach here: `not_in:0` makes it a 422, so integer() only
+        // returns 0 for a missing param.
+        $perPage = $request->integer('per_page');
+        $total = null;
+
+        if ($perPage === self::ALL_PER_PAGE || $perPage === 0) {
+            // Not simply paginate(-1): a negative limit is dropped by the query
+            // builder while the offset is still emitted, and `OFFSET` without
+            // `LIMIT` is a syntax error in both SQLite and MySQL. Counting once
+            // and paginating by that keeps a single page and an honest
+            // meta.per_page - the total is handed back so paginate() does not
+            // run the same count a second time.
+            $total = $query->toBase()->getCountForPagination();
+            $perPage = max($total, 1);
+        }
+
+        return ImageResource::collection($query->paginate($perPage, total: $total));
     }
 
     public function store(StoreImageRequest $request): ImageResource
     {
+        $document = Document::findOrFail($request->integer('document_id'));
+
+        // Authorised against the target document, since the image does not
+        // exist yet. StoreImageRequest already rejected a document outside the
+        // caller's team, so this is the belt to that braces.
+        Gate::authorize('create', [Image::class, $document]);
+
         $image = $request->user()
             ->images()
-            ->create($request->safe()->only(['title', 'description']));
+            ->create([
+                ...$request->safe()->only(['title', 'description']),
+                'document_id' => $document->id,
+            ]);
 
         $image->addMediaFromRequest('image')
             ->usingName($image->title)
@@ -42,6 +151,8 @@ class ImageController extends Controller
 
     public function update(UpdateImageRequest $request, Image $image): ImageResource
     {
+        Gate::authorize('update', $image);
+
         $image->update($request->safe()->only(['title', 'description']));
 
         if ($request->hasFile('image')) {
@@ -59,12 +170,32 @@ class ImageController extends Controller
         return new ImageResource($image->load(['categories', 'media', 'user']));
     }
 
-    public function destroy(Request $request, Image $image): Response
+    public function destroy(Image $image): Response
     {
-        abort_if($image->user_id !== $request->user()->id, 404);
+        // Was an abort_if on ownership; an admin may now delete a teammate's
+        // image, so the policy decides instead.
+        Gate::authorize('delete', $image);
 
         $image->delete();
 
         return response()->noContent();
+    }
+
+    /**
+     * Undo a soft delete, from the admin screen's pending-deletion table.
+     *
+     * Mirrors TeamController::restore(), including the 404 on a live row: the
+     * route is bound withTrashed(), so a live image resolves here perfectly
+     * well and would otherwise be "restored" to no effect.
+     */
+    public function restore(Image $image): ImageResource
+    {
+        Gate::authorize('restore', $image);
+
+        abort_if(! $image->trashed(), 404);
+
+        $image->restore();
+
+        return new ImageResource($image->load(['categories', 'media', 'user']));
     }
 }

@@ -1,5 +1,8 @@
 <?php
 
+use App\Enums\RoleName;
+use App\Models\Document;
+use App\Models\Team;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
 use Spatie\Permission\PermissionRegistrar;
@@ -71,4 +74,34 @@ function seedRoles(): void
 function superAdmin(): User
 {
     return User::factory()->superAdmin()->create();
+}
+
+/**
+ * A team with an admin, two members, and a document the admin created.
+ *
+ * Every interesting documents/images rule is about one actor acting on another
+ * actor's row inside a team, so a single-user fixture cannot express any of
+ * them. Two members are included because "a member may not edit another
+ * member's image" needs a second member to be meaningful.
+ *
+ * Seeds roles itself — assignToTeam() fails without them.
+ *
+ * @return array{team: Team, admin: User, member: User, other: User, document: Document}
+ */
+function teamFixture(): array
+{
+    seedRoles();
+
+    $team = Team::factory()->create();
+    $admin = User::factory()->create();
+    $member = User::factory()->create();
+    $other = User::factory()->create();
+
+    $admin->assignToTeam($team, RoleName::Admin);
+    $member->assignToTeam($team, RoleName::Member);
+    $other->assignToTeam($team, RoleName::Member);
+
+    $document = Document::factory()->for($admin)->create(['team_id' => $team->id]);
+
+    return compact('team', 'admin', 'member', 'other', 'document');
 }

@@ -84,6 +84,11 @@ class User extends Authenticatable implements HasMedia
         return $this->hasMany(Image::class);
     }
 
+    public function documents(): HasMany
+    {
+        return $this->hasMany(Document::class);
+    }
+
     /**
      * The role this user is presented as: the global flag first, then their
      * role within their team, falling back to Member for a team-less user.

@@ -3,14 +3,13 @@
 namespace Database\Factories;
 
 use App\Models\Document;
-use App\Models\Image;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<Image>
+ * @extends Factory<Document>
  */
-class ImageFactory extends Factory
+class DocumentFactory extends Factory
 {
     /**
      * Define the model's default state.
@@ -21,9 +20,9 @@ class ImageFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            // Every image belongs to a document, so the factory makes one rather
-            // than leaving a NOT NULL column unset.
-            'document_id' => Document::factory(),
+            // Left null by default: team stamping is the controller's job and
+            // most tests are about ownership, not teams.
+            'team_id' => null,
             'title' => fake()->words(3, true),
             'description' => fake()->optional()->sentence(),
         ];

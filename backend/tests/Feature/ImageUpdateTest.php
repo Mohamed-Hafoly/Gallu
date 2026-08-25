@@ -1,7 +1,10 @@
 <?php
 
+use App\Enums\RoleName;
 use App\Models\Category;
+use App\Models\Document;
 use App\Models\Image;
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -16,12 +19,13 @@ beforeEach(function () {
     Storage::fake('public');
 });
 
-function createImageFor(User $user, array $overrides = []): Image
+function createImageFor(User $user, Document $document, array $overrides = []): Image
 {
     $imageId = actingAs($user)
         ->postJson('/api/images', array_merge([
             'image' => UploadedFile::fake()->image('photo.jpg', 600, 600),
             'title' => 'Original title',
+            'document_id' => $document->id,
             'selected_category_ids' => [Category::factory()->create()->id],
         ], $overrides))
         ->json('data.id');
@@ -41,13 +45,12 @@ function validUpdatePayload(array $overrides = []): array
 it('requires authentication to update an image', function () {
     $image = Image::factory()->for(User::factory())->create();
 
-    patchJson("/api/images/{$image->id}", validUpdatePayload())
-        ->assertUnauthorized();
+    patchJson("/api/images/{$image->id}", validUpdatePayload())->assertUnauthorized();
 });
 
 it('updates its own image', function () {
-    $user = User::factory()->create();
-    $image = createImageFor($user);
+    ['member' => $user, 'document' => $document] = teamFixture();
+    $image = createImageFor($user, $document);
     $categories = Category::factory()->count(2)->create();
 
     actingAs($user)
@@ -60,22 +63,58 @@ it('updates its own image', function () {
         ->assertJsonCount(2, 'data.categories');
 });
 
-it('does not let a user update someone elses image', function () {
-    $user = User::factory()->create();
-    $other = User::factory()->create();
-    $image = createImageFor($other);
+// ------------------------------------------------------------ the new matrix
 
-    actingAs($user)
+// A member may now *see* a teammate's image but not change it. 403, where this
+// used to be a 404 from an ownership abort_if — the row is legitimately visible.
+it('does not let a member update a teammates image', function () {
+    ['member' => $member, 'other' => $other, 'document' => $document] = teamFixture();
+    $image = createImageFor($other, $document);
+
+    actingAs($member)
         ->patchJson("/api/images/{$image->id}", validUpdatePayload())
-        ->assertNotFound();
+        ->assertForbidden();
 
     expect($image->fresh()->title)->toBe('Original title');
 });
 
+it('lets an admin update a team members image', function () {
+    ['admin' => $admin, 'member' => $member, 'document' => $document] = teamFixture();
+    $image = createImageFor($member, $document);
+
+    actingAs($admin)
+        ->patchJson("/api/images/{$image->id}", validUpdatePayload())
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Updated title');
+});
+
+it('refuses an admin from another team', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+    $image = createImageFor($member, $document);
+
+    $outsider = User::factory()->create();
+    $outsider->assignToTeam(Team::factory()->create(), RoleName::Admin);
+
+    actingAs($outsider)
+        ->patchJson("/api/images/{$image->id}", validUpdatePayload())
+        ->assertForbidden();
+});
+
+it('lets a super admin update any image', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+    $image = createImageFor($member, $document);
+
+    actingAs(superAdmin())
+        ->patchJson("/api/images/{$image->id}", validUpdatePayload())
+        ->assertOk();
+});
+
+// ------------------------------------------------------------ titles
+
 it('rejects a duplicate title against a different image of the same user', function () {
-    $user = User::factory()->create();
-    createImageFor($user, ['title' => 'Taken title']);
-    $image = createImageFor($user, ['title' => 'Original title']);
+    ['member' => $user, 'document' => $document] = teamFixture();
+    createImageFor($user, $document, ['title' => 'Taken title']);
+    $image = createImageFor($user, $document, ['title' => 'Original title']);
 
     actingAs($user)
         ->patchJson("/api/images/{$image->id}", validUpdatePayload(['title' => 'Taken title']))
@@ -83,8 +122,8 @@ it('rejects a duplicate title against a different image of the same user', funct
 });
 
 it('allows keeping the images own unchanged title', function () {
-    $user = User::factory()->create();
-    $image = createImageFor($user, ['title' => 'Same title']);
+    ['member' => $user, 'document' => $document] = teamFixture();
+    $image = createImageFor($user, $document, ['title' => 'Same title']);
 
     actingAs($user)
         ->patchJson("/api/images/{$image->id}", validUpdatePayload(['title' => 'Same title']))
@@ -92,9 +131,23 @@ it('allows keeping the images own unchanged title', function () {
         ->assertJsonPath('data.title', 'Same title');
 });
 
+// Uniqueness follows the image's owner, not the caller, or an admin editing a
+// teammate's image would collide with their own titles instead.
+it('scopes the title uniqueness check to the images owner, not the editing admin', function () {
+    ['admin' => $admin, 'member' => $member, 'document' => $document] = teamFixture();
+    createImageFor($admin, $document, ['title' => 'Admins own title']);
+    $image = createImageFor($member, $document, ['title' => 'Members title']);
+
+    actingAs($admin)
+        ->patchJson("/api/images/{$image->id}", validUpdatePayload(['title' => 'Admins own title']))
+        ->assertOk();
+});
+
+// ------------------------------------------------------------ media handling
+
 it('replaces the media file when a new image is uploaded', function () {
-    $user = User::factory()->create();
-    $image = createImageFor($user);
+    ['member' => $user, 'document' => $document] = teamFixture();
+    $image = createImageFor($user, $document);
     $originalFileName = $image->getFirstMedia(Image::IMAGES_COLLECTION)->file_name;
 
     actingAs($user)
@@ -111,8 +164,8 @@ it('replaces the media file when a new image is uploaded', function () {
 });
 
 it('keeps the existing media but syncs its name when no new image is uploaded', function () {
-    $user = User::factory()->create();
-    $image = createImageFor($user);
+    ['member' => $user, 'document' => $document] = teamFixture();
+    $image = createImageFor($user, $document);
     $originalFileName = $image->getFirstMedia(Image::IMAGES_COLLECTION)->file_name;
 
     actingAs($user)

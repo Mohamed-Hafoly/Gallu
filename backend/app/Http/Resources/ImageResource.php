@@ -36,7 +36,13 @@ class ImageResource extends JsonResource
             // CI (Model::shouldBeStrict in AppServiceProvider) rather than
             // quietly serving images with no creator.
             'creator' => $this->user->name,
+            'document_id' => $this->document_id,
             'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
+            // Null on every live image, which is exactly how the admin screen
+            // splits its two tables. The gallery receives it too and ignores
+            // it — its listing can never contain a trashed row anyway.
+            'deleted_at' => $this->deleted_at,
         ];
     }
 }

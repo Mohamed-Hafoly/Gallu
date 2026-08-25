@@ -10,8 +10,8 @@ class UpdateImageRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        abort_if($this->route('image')->user_id !== $this->user()->id, 404);
-
+        // Was an ownership abort_if. An admin may now edit a teammate's image,
+        // so ImagePolicy::update decides, via Gate::authorize in the controller.
         return true;
     }
 
@@ -26,8 +26,10 @@ class UpdateImageRequest extends FormRequest
                 'required',
                 'string',
                 'max:140',
+                // Scoped to the image's owner, not the caller: an admin editing
+                // a teammate's image must not collide with their own titles.
                 Rule::unique('images', 'title')
-                    ->where('user_id', $this->user()->id)
+                    ->where('user_id', $this->route('image')->user_id)
                     ->withoutTrashed()
                     ->ignore($this->route('image')),
             ],

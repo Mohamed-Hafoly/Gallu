@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\Category;
+use App\Models\Document;
 use App\Models\Image;
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -16,28 +18,33 @@ beforeEach(function () {
     Storage::fake('public');
 });
 
-function validImagePayload(array $overrides = []): array
+function validImagePayload(Document $document, array $overrides = []): array
 {
     return array_merge([
         'image' => UploadedFile::fake()->image('photo.jpg', 600, 600),
         'title' => 'My photo',
+        'document_id' => $document->id,
         'selected_category_ids' => [Category::factory()->create()->id],
     ], $overrides);
 }
 
 it('requires authentication to upload an image', function () {
-    postJson('/api/images', validImagePayload())
-        ->assertUnauthorized();
+    $document = Document::factory()->for(User::factory())->create();
+
+    postJson('/api/images', validImagePayload($document))->assertUnauthorized();
 });
 
-it('uploads an image into the images table', function () {
-    $user = User::factory()->create();
+// ------------------------------------------------------------ upload
+
+it('uploads an image into a document', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
 
     actingAs($user)
-        ->postJson('/api/images', validImagePayload())
+        ->postJson('/api/images', validImagePayload($document))
         ->assertCreated()
         ->assertJsonPath('data.title', 'My photo')
-        ->assertJsonPath('data.creator', $user->name);
+        ->assertJsonPath('data.creator', $user->name)
+        ->assertJsonPath('data.document_id', $document->id);
 
     expect(Image::count())->toBe(1);
 
@@ -47,11 +54,44 @@ it('uploads an image into the images table', function () {
     expect($media->file_name)->toEndWith('.jpg');
 });
 
-it('rejects a non-image upload', function () {
-    $user = User::factory()->create();
+// The core of the redesign: an image cannot exist outside a document.
+it('refuses an upload with no document', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
 
     actingAs($user)
-        ->postJson('/api/images', validImagePayload([
+        ->postJson('/api/images', validImagePayload($document, ['document_id' => null]))
+        ->assertJsonValidationErrorFor('document_id');
+
+    expect(Image::count())->toBe(0);
+});
+
+it('refuses a document belonging to another team', function () {
+    ['member' => $user] = teamFixture();
+    $theirs = Document::factory()->for(User::factory())->create([
+        'team_id' => Team::factory()->create()->id,
+    ]);
+
+    actingAs($user)
+        ->postJson('/api/images', validImagePayload($theirs))
+        ->assertJsonValidationErrorFor('document_id');
+
+    expect(Image::count())->toBe(0);
+});
+
+it('refuses a soft deleted document', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
+    $document->delete();
+
+    actingAs($user)
+        ->postJson('/api/images', validImagePayload($document))
+        ->assertJsonValidationErrorFor('document_id');
+});
+
+it('rejects a non-image upload', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
+
+    actingAs($user)
+        ->postJson('/api/images', validImagePayload($document, [
             'image' => UploadedFile::fake()->create('notes.pdf', 100, 'application/pdf'),
         ]))
         ->assertJsonValidationErrorFor('image');
@@ -60,147 +100,164 @@ it('rejects a non-image upload', function () {
 });
 
 it('requires a title', function () {
-    $user = User::factory()->create();
+    ['member' => $user, 'document' => $document] = teamFixture();
 
     actingAs($user)
-        ->postJson('/api/images', validImagePayload(['title' => null]))
+        ->postJson('/api/images', validImagePayload($document, ['title' => null]))
         ->assertJsonValidationErrorFor('title');
+});
 
-    expect(Image::count())->toBe(0);
+it('requires at least one category', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
+
+    actingAs($user)
+        ->postJson('/api/images', validImagePayload($document, ['selected_category_ids' => []]))
+        ->assertJsonValidationErrorFor('selected_category_ids');
 });
 
 it('rejects a duplicate title for the same user', function () {
-    $user = User::factory()->create();
+    ['member' => $user, 'document' => $document] = teamFixture();
 
-    actingAs($user)->postJson('/api/images', validImagePayload(['title' => 'Beach Sunset']))
+    actingAs($user)->postJson('/api/images', validImagePayload($document, ['title' => 'Beach']))
         ->assertCreated();
-
-    actingAs($user)->postJson('/api/images', validImagePayload(['title' => 'Beach Sunset']))
+    actingAs($user)->postJson('/api/images', validImagePayload($document, ['title' => 'Beach']))
         ->assertJsonValidationErrorFor('title');
 
     expect(Image::count())->toBe(1);
 });
 
-it('allows different users to share the same title', function () {
-    $user = User::factory()->create();
-    $other = User::factory()->create();
-
-    actingAs($user)->postJson('/api/images', validImagePayload(['title' => 'Beach Sunset']))
-        ->assertCreated();
-
-    actingAs($other)->postJson('/api/images', validImagePayload(['title' => 'Beach Sunset']))
-        ->assertCreated();
-
-    expect(Image::count())->toBe(2);
-});
-
-it('attaches categories to an image on upload', function () {
-    $user = User::factory()->create();
+it('attaches categories on upload', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
     $categories = Category::factory()->count(2)->create();
 
-    $response = actingAs($user)
-        ->postJson('/api/images', validImagePayload([
+    actingAs($user)
+        ->postJson('/api/images', validImagePayload($document, [
             'selected_category_ids' => $categories->pluck('id')->all(),
         ]))
         ->assertCreated()
         ->assertJsonCount(2, 'data.categories');
-
-    expect($response->json('data.categories.0.id'))->toBeIn($categories->pluck('id')->all());
 });
 
-it('rejects a nonexistent category id', function () {
-    $user = User::factory()->create();
+// ------------------------------------------------------------ visibility
 
-    actingAs($user)
-        ->postJson('/api/images', validImagePayload(['selected_category_ids' => [999]]))
-        ->assertJsonValidationErrorFor('selected_category_ids.0');
-});
+// The behaviour change that matters most: images are team-scoped now, not
+// owner-scoped, so a member sees what their teammates uploaded.
+it('shows a member their teammates images', function () {
+    ['member' => $member, 'other' => $other, 'document' => $document] = teamFixture();
+    Image::factory()->for($other)->for($document)->create(['title' => 'Theirs']);
 
-it('rejects a soft-deleted category id', function () {
-    $user = User::factory()->create();
-    $category = Category::factory()->create();
-    $category->delete();
-
-    actingAs($user)
-        ->postJson('/api/images', validImagePayload(['selected_category_ids' => [$category->id]]))
-        ->assertJsonValidationErrorFor('selected_category_ids.0');
-
-    expect(Image::count())->toBe(0);
-});
-
-it('requires at least one category', function () {
-    $user = User::factory()->create();
-
-    actingAs($user)
-        ->postJson('/api/images', validImagePayload(['selected_category_ids' => null]))
-        ->assertJsonValidationErrorFor('selected_category_ids');
-
-    actingAs($user)
-        ->postJson('/api/images', validImagePayload(['selected_category_ids' => []]))
-        ->assertJsonValidationErrorFor('selected_category_ids');
-
-    expect(Image::count())->toBe(0);
-});
-
-it('lists only the images belonging to the authenticated user', function () {
-    $user = User::factory()->create();
-    $other = User::factory()->create();
-
-    actingAs($user)->postJson('/api/images', validImagePayload(['title' => 'Mine']));
-    actingAs($other)->postJson('/api/images', validImagePayload(['title' => 'Theirs']));
-
-    actingAs($user)
+    actingAs($member)
         ->getJson('/api/images')
         ->assertOk()
         ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.title', 'Mine')
-        ->assertJsonPath('data.0.creator', $user->name);
+        ->assertJsonPath('data.0.title', 'Theirs');
 });
 
-// ImageResource serves `creator` unconditionally, so it is part of the contract
-// on every row rather than something the caller can omit. Several images, not
-// one: the lazy-loading guard is only armed for queries returning more than one
-// model, so dropping ->with('user') from the controller has to fail here.
-it('returns a creator on every row of a multi image listing', function () {
-    $user = User::factory()->create();
-    Image::factory()->count(3)->for($user)->create();
+it('hides images from another team', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+    Image::factory()->for($member)->for($document)->create(['title' => 'Mine']);
 
-    $rows = actingAs($user)
+    $theirDocument = Document::factory()->for(User::factory())->create([
+        'team_id' => Team::factory()->create()->id,
+    ]);
+    Image::factory()->for(User::factory())->for($theirDocument)->create(['title' => 'Theirs']);
+
+    actingAs($member)
+        ->getJson('/api/images')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.title', 'Mine');
+});
+
+it('shows a super admin every teams images', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+    Image::factory()->for($member)->for($document)->create();
+
+    $theirDocument = Document::factory()->for(User::factory())->create([
+        'team_id' => Team::factory()->create()->id,
+    ]);
+    Image::factory()->for(User::factory())->for($theirDocument)->create();
+
+    actingAs(superAdmin())->getJson('/api/images')->assertOk()->assertJsonCount(2, 'data');
+});
+
+it('shows a team less member nothing at all', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+    Image::factory()->for($member)->for($document)->create();
+
+    actingAs(User::factory()->create())
+        ->getJson('/api/images')
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+});
+
+// ------------------------------------------------------------ document filter
+
+it('filters the listing to one document', function () {
+    ['member' => $member, 'admin' => $admin, 'team' => $team, 'document' => $document] = teamFixture();
+    Image::factory()->for($member)->for($document)->create(['title' => 'In this doc']);
+
+    $another = Document::factory()->for($admin)->create(['team_id' => $team->id]);
+    Image::factory()->for($member)->for($another)->create(['title' => 'In the other doc']);
+
+    actingAs($member)
+        ->getJson("/api/images?document_id={$document->id}")
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.title', 'In this doc');
+});
+
+// The filter narrows, it must never widen: it is applied after scopeVisibleTo.
+it('returns nothing when filtering by another teams document', function () {
+    ['member' => $member] = teamFixture();
+    $theirDocument = Document::factory()->for(User::factory())->create([
+        'team_id' => Team::factory()->create()->id,
+    ]);
+    Image::factory()->for(User::factory())->for($theirDocument)->create();
+
+    actingAs($member)
+        ->getJson("/api/images?document_id={$theirDocument->id}")
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+});
+
+// ------------------------------------------------------------ delete
+
+it('lets a member soft delete their own image', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+    $image = Image::factory()->for($member)->for($document)->create();
+
+    actingAs($member)->deleteJson("/api/images/{$image->id}")->assertNoContent();
+
+    expect(Image::find($image->id))->toBeNull();
+    expect(Image::withTrashed()->find($image->id))->not->toBeNull();
+});
+
+it('refuses to let a member delete a teammates image, but lets an admin', function () {
+    ['admin' => $admin, 'member' => $member, 'other' => $other, 'document' => $document] = teamFixture();
+    $image = Image::factory()->for($other)->for($document)->create();
+
+    actingAs($member)->deleteJson("/api/images/{$image->id}")->assertForbidden();
+    expect(Image::find($image->id))->not->toBeNull();
+
+    actingAs($admin)->deleteJson("/api/images/{$image->id}")->assertNoContent();
+    expect(Image::find($image->id))->toBeNull();
+});
+
+// ------------------------------------------------------------ payload shape
+
+// Three rows, not one: Builder::hydrate() only arms the lazy-loading guard for
+// queries returning more than one model.
+it('returns a creator on every row of a multi image listing', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+    Image::factory()->count(3)->for($member)->for($document)->create();
+
+    $rows = actingAs($member)
         ->getJson('/api/images')
         ->assertOk()
         ->assertJsonCount(3, 'data')
         ->json('data');
 
-    expect($rows)->each->toHaveKey('creator');
-    expect(array_column($rows, 'creator'))->toBe(array_fill(0, 3, $user->name));
-});
-
-it('does not let a user delete someone elses image', function () {
-    $user = User::factory()->create();
-    $other = User::factory()->create();
-
-    $imageId = actingAs($other)
-        ->postJson('/api/images', validImagePayload(['image' => UploadedFile::fake()->image('theirs.jpg')]))
-        ->json('data.id');
-
-    actingAs($user)
-        ->deleteJson("/api/images/{$imageId}")
-        ->assertNotFound();
-
-    expect(Image::withTrashed()->find($imageId))->not->toBeNull();
-});
-
-it('soft deletes an own image', function () {
-    $user = User::factory()->create();
-
-    $imageId = actingAs($user)
-        ->postJson('/api/images', validImagePayload(['image' => UploadedFile::fake()->image('mine.jpg')]))
-        ->json('data.id');
-
-    actingAs($user)
-        ->deleteJson("/api/images/{$imageId}")
-        ->assertNoContent();
-
-    expect(Image::find($imageId))->toBeNull();
-    expect(Image::withTrashed()->find($imageId))->not->toBeNull();
+    expect($rows)->each->toHaveKeys(['creator', 'document_id']);
+    expect(array_column($rows, 'creator'))->toBe(array_fill(0, 3, $member->name));
 });

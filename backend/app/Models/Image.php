@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Database\Factories\ImageFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -34,6 +35,7 @@ class Image extends Model implements HasMedia
      */
     protected $fillable = [
         'user_id',
+        'document_id',
         'title',
         'description',
     ];
@@ -41,6 +43,33 @@ class Image extends Model implements HasMedia
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function document(): BelongsTo
+    {
+        return $this->belongsTo(Document::class);
+    }
+
+    /**
+     * Restrict a listing to what this user is allowed to see: everything for a
+     * super-admin, otherwise only images in their own team's documents.
+     *
+     * An image has no team of its own — it inherits its document's, through a
+     * NOT NULL foreign key. A team_id column here would be a second source of
+     * truth that drifts the moment a document is moved between teams.
+     *
+     * A team-less non-super-admin matches nothing, which is correct: they have
+     * no team whose entries they could be entitled to.
+     */
+    public function scopeVisibleTo(Builder $query, User $user): void
+    {
+        if ($user->is_super_admin) {
+            return;
+        }
+
+        $teamId = $user->teamAssignment()['team_id'] ?? null;
+
+        $query->whereHas('document', fn (Builder $document) => $document->where('team_id', $teamId));
     }
 
     public function categories(): BelongsToMany
