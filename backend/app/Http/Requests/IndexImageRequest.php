@@ -10,11 +10,12 @@ use Illuminate\Validation\Rule;
  * Query string of the images listing, which serves two callers: the gallery's
  * plain list and the admin screen's two server-paginated tables.
  *
- * `document_id` is only a filter — it narrows the list, it does not widen it.
- * The controller applies it after scopeVisibleTo(), so passing another team's
- * document id yields an empty list rather than a leak, and validation
- * deliberately does not check the id against the caller's team: doing so would
- * turn "no such images" into "that document exists but is not yours".
+ * `document_id` and `owner` are only filters — they narrow the list, they do
+ * not widen it. The controller applies both after scopeVisibleTo(), so passing
+ * another team's document id yields an empty list rather than a leak, and
+ * validation deliberately does not check the id against the caller's team:
+ * doing so would turn "no such images" into "that document exists but is not
+ * yours".
  */
 class IndexImageRequest extends FormRequest
 {
@@ -25,6 +26,12 @@ class IndexImageRequest extends FormRequest
     {
         return [
             'document_id' => ['sometimes', 'integer'],
+            // Narrows a listing to the caller's own images. `mine` is the only
+            // accepted value: "all" is the absence of the param, not a value of
+            // it, so there is no `all` to validate. Left as Rule::in() rather
+            // than a bare string so the next filter value is a one-word change
+            // and an unknown one stays a 422.
+            'owner' => ['sometimes', 'nullable', 'string', Rule::in([ImageController::OWNER_MINE])],
             // Which side of the soft delete to serve. Absent means live only,
             // which is what keeps deleted images out of the gallery — an enum
             // rather than a boolean because the admin screen's two tables need

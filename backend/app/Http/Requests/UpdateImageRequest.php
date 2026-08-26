@@ -22,20 +22,24 @@ class UpdateImageRequest extends FormRequest
     {
         return [
             'image' => ImageValidationRules::image(required: false),
-            'title' => [
-                'required',
-                'string',
-                'max:140',
-                // Scoped to the image's owner, not the caller: an admin editing
-                // a teammate's image must not collide with their own titles.
-                Rule::unique('images', 'title')
-                    ->where('user_id', $this->route('image')->user_id)
-                    ->withoutTrashed()
-                    ->ignore($this->route('image')),
-            ],
+            // The document comes from the bound model, not from input: this
+            // endpoint accepts no document_id, so an image cannot move between
+            // documents here and the scope cannot be steered by the caller.
+            'title' => ImageValidationRules::title(
+                $this->route('image')->document_id,
+                $this->route('image'),
+            ),
             'description' => ['nullable', 'string', 'max:400'],
             'selected_category_ids' => ['required', 'array', 'min:1'],
             'selected_category_ids.*' => ['integer', Rule::exists('categories', 'id')->whereNull('deleted_at')],
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return ImageValidationRules::messages();
     }
 }

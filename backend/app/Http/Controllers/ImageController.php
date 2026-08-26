@@ -32,6 +32,13 @@ class ImageController extends Controller
     public const CREATOR_SORT = 'creator';
 
     /**
+     * The one accepted value of the `owner` filter, which narrows a listing to
+     * the caller's own images. There is deliberately no `all` counterpart -
+     * "all" is the absence of the filter, not a value of it.
+     */
+    public const OWNER_MINE = 'mine';
+
+    /**
      * What the table's "All" option sends for per_page.
      */
     public const ALL_PER_PAGE = -1;
@@ -68,6 +75,14 @@ class ImageController extends Controller
             ->when(
                 $request->filled('document_id'),
                 fn ($builder) => $builder->where('document_id', $request->integer('document_id')),
+            )
+            // Same rule as document_id: a filter, applied after the scope, so
+            // it only ever narrows. `users.id` is the owner column's target and
+            // images.user_id is NOT NULL, so this is a plain equality with no
+            // null case to think about.
+            ->when(
+                $request->input('owner') === self::OWNER_MINE,
+                fn ($builder) => $builder->where('user_id', $request->user()->id),
             )
             // Grouped, so the ORs cannot escape the scope above and turn a
             // search into a cross-team read.

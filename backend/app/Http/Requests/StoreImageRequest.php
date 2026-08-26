@@ -29,15 +29,21 @@ class StoreImageRequest extends FormRequest
                         fn ($rule) => $rule->where('team_id', $this->user()->teamAssignment()['team_id'] ?? null),
                     ),
             ],
-            'title' => [
-                'required',
-                'string',
-                'max:140',
-                Rule::unique('images', 'title')->where('user_id', $this->user()->id)->withoutTrashed(),
-            ],
+            // Scoped to the document, which the sibling rule above validates.
+            // A forged or missing id reaches this as 0, matching no rows and
+            // passing - the request still fails on document_id itself.
+            'title' => ImageValidationRules::title($this->integer('document_id')),
             'description' => ['nullable', 'string', 'max:400'],
             'selected_category_ids' => ['required', 'array', 'min:1'],
             'selected_category_ids.*' => ['integer', Rule::exists('categories', 'id')->whereNull('deleted_at')],
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return ImageValidationRules::messages();
     }
 }

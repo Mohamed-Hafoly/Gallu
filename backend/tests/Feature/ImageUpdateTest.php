@@ -111,7 +111,7 @@ it('lets a super admin update any image', function () {
 
 // ------------------------------------------------------------ titles
 
-it('rejects a duplicate title against a different image of the same user', function () {
+it('rejects a duplicate title against a different image in the same document', function () {
     ['member' => $user, 'document' => $document] = teamFixture();
     createImageFor($user, $document, ['title' => 'Taken title']);
     $image = createImageFor($user, $document, ['title' => 'Original title']);
@@ -119,6 +119,21 @@ it('rejects a duplicate title against a different image of the same user', funct
     actingAs($user)
         ->patchJson("/api/images/{$image->id}", validUpdatePayload(['title' => 'Taken title']))
         ->assertJsonValidationErrorFor('title');
+});
+
+// The point of scoping to the document rather than the owner: a title only has
+// to be unique among the images it sits beside on the document page.
+it('allows a title already used in a different document', function () {
+    ['member' => $user, 'admin' => $admin, 'team' => $team, 'document' => $document] = teamFixture();
+    $another = Document::factory()->for($admin)->create(['team_id' => $team->id]);
+
+    createImageFor($user, $another, ['title' => 'Front cover']);
+    $image = createImageFor($user, $document, ['title' => 'Original title']);
+
+    actingAs($user)
+        ->patchJson("/api/images/{$image->id}", validUpdatePayload(['title' => 'Front cover']))
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Front cover');
 });
 
 it('allows keeping the images own unchanged title', function () {
@@ -131,11 +146,25 @@ it('allows keeping the images own unchanged title', function () {
         ->assertJsonPath('data.title', 'Same title');
 });
 
-// Uniqueness follows the image's owner, not the caller, or an admin editing a
-// teammate's image would collide with their own titles instead.
-it('scopes the title uniqueness check to the images owner, not the editing admin', function () {
+// Uniqueness follows the document, not either user, so who owns the image and
+// who is editing it are both irrelevant - only where the image lives counts.
+it('rejects a collision with another owners title in the same document', function () {
     ['admin' => $admin, 'member' => $member, 'document' => $document] = teamFixture();
     createImageFor($admin, $document, ['title' => 'Admins own title']);
+    $image = createImageFor($member, $document, ['title' => 'Members title']);
+
+    actingAs($admin)
+        ->patchJson("/api/images/{$image->id}", validUpdatePayload(['title' => 'Admins own title']))
+        ->assertJsonValidationErrorFor('title');
+});
+
+// Same two users, same two titles - only the document differs, and that is
+// enough to make the collision disappear.
+it('allows another owners title when the images are in different documents', function () {
+    ['admin' => $admin, 'member' => $member, 'team' => $team, 'document' => $document] = teamFixture();
+    $another = Document::factory()->for($admin)->create(['team_id' => $team->id]);
+
+    createImageFor($admin, $another, ['title' => 'Admins own title']);
     $image = createImageFor($member, $document, ['title' => 'Members title']);
 
     actingAs($admin)

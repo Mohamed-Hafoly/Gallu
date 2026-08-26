@@ -115,7 +115,7 @@ it('requires at least one category', function () {
         ->assertJsonValidationErrorFor('selected_category_ids');
 });
 
-it('rejects a duplicate title for the same user', function () {
+it('rejects a duplicate title in the same document', function () {
     ['member' => $user, 'document' => $document] = teamFixture();
 
     actingAs($user)->postJson('/api/images', validImagePayload($document, ['title' => 'Beach']))
@@ -124,6 +124,45 @@ it('rejects a duplicate title for the same user', function () {
         ->assertJsonValidationErrorFor('title');
 
     expect(Image::count())->toBe(1);
+});
+
+// The hole the per-owner scope left open: a title is how an image is told apart
+// from its siblings on the document page, so a teammate must not reuse one.
+it('rejects a duplicate title from a different user in the same document', function () {
+    ['member' => $user, 'other' => $other, 'document' => $document] = teamFixture();
+
+    actingAs($user)->postJson('/api/images', validImagePayload($document, ['title' => 'Beach']))
+        ->assertCreated();
+    actingAs($other)->postJson('/api/images', validImagePayload($document, ['title' => 'Beach']))
+        ->assertJsonValidationErrorFor('title');
+
+    expect(Image::count())->toBe(1);
+});
+
+// And the behaviour bought in exchange: the same title in another document is
+// not a collision at all.
+it('allows the same title in a different document', function () {
+    ['member' => $user, 'admin' => $admin, 'team' => $team, 'document' => $document] = teamFixture();
+    $another = Document::factory()->for($admin)->create(['team_id' => $team->id]);
+
+    actingAs($user)->postJson('/api/images', validImagePayload($document, ['title' => 'Beach']))
+        ->assertCreated();
+    actingAs($user)->postJson('/api/images', validImagePayload($another, ['title' => 'Beach']))
+        ->assertCreated();
+
+    expect(Image::count())->toBe(2);
+});
+
+// The stock unique message would say only "already been taken", which reads as
+// a lie now that another document may hold that very title.
+it('names the document in the duplicate title message', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
+
+    actingAs($user)->postJson('/api/images', validImagePayload($document, ['title' => 'Beach']))
+        ->assertCreated();
+
+    actingAs($user)->postJson('/api/images', validImagePayload($document, ['title' => 'Beach']))
+        ->assertJsonPath('errors.title.0', __('image.duplicateTitle'));
 });
 
 it('attaches categories on upload', function () {
