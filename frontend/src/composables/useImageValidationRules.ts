@@ -9,7 +9,11 @@ export function useImageValidationRules() {
   const maxLength = (max: number) => (v: string) =>
     (v?.trim().length ?? 0) <= max || t("validation.maxLength", { max });
 
-  // Mirrors backend/app/Http/Requests/StoreImageRequest.php — change both together.
+  // Mirrors the length half of ImageValidationRules::title() in the backend —
+  // change both together. The uniqueness half is deliberately not duplicated:
+  // a title only has to be unique within its document, and the browser holds no
+  // list of that document's other titles to check against. A collision comes
+  // back as a 422 and lands on the field through TitleField's `error` prop.
   const titleRules = [required, maxLength(140)];
   const descriptionRules = [maxLength(400)];
 

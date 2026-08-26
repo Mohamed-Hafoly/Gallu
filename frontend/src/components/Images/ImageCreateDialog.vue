@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import type { Category } from "@/types/category";
+  import type { AxiosError } from "axios";
   import type { VForm } from "vuetify/components";
   import { computed, onMounted, reactive, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
@@ -38,6 +39,10 @@
   const selectedFile = ref<File | null>(null);
   const categoryError = ref("");
   const fileError = ref("");
+  // Server-side only: the title must be unique within the document, which the
+  // browser has no cheap way to know. Cleared as soon as the title is edited,
+  // so the message never outlives the value it was about.
+  const titleError = ref("");
   const submitting = ref(false);
 
   onMounted(async () => {
@@ -58,6 +63,7 @@
     selectedFile.value = null;
     categoryError.value = "";
     fileError.value = "";
+    titleError.value = "";
     formRef.value?.resetValidation();
   }
 
@@ -94,7 +100,8 @@
       });
       emit("created");
       close();
-    } catch {
+    } catch (error) {
+      titleError.value = (error as AxiosError).fieldErrors?.title?.[0] ?? "";
       notifier.notify(t("gallery.uploadFailed"), "error");
     } finally {
       submitting.value = false;
@@ -115,7 +122,12 @@
         {{ fileError }}
       </p>
 
-      <TitleField v-model="form.title" editable />
+      <TitleField
+        v-model="form.title"
+        editable
+        :error="titleError"
+        @update:model-value="titleError = ''"
+      />
 
       <v-card-text>
         <CategoriesField

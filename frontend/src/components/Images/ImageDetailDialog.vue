@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import type { Category } from "@/types/category";
   import type { Image } from "@/types/image";
+  import type { AxiosError } from "axios";
   import type { VForm } from "vuetify/components";
   import { computed, onMounted, reactive, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
@@ -34,6 +35,10 @@
   const formValid = ref<boolean | null>(null);
   const allCategories = ref<Category[]>([]);
   const categoryError = ref("");
+  // Server-side only: the title must be unique within the document, which the
+  // browser has no cheap way to know. Cleared as soon as the title is edited,
+  // so the message never outlives the value it was about.
+  const titleError = ref("");
   const submitting = ref(false);
 
   const form = reactive({
@@ -88,6 +93,7 @@
     isEditing.value = false;
     pickedFile.value = null;
     categoryError.value = "";
+    titleError.value = "";
     formRef.value?.resetValidation();
   }
 
@@ -128,6 +134,7 @@
     form.description = original.description;
     form.selectedCategoryIds = [...original.selectedCategoryIds];
     pickedFile.value = null;
+    titleError.value = "";
     formRef.value?.resetValidation();
     isEditing.value = false;
   }
@@ -161,7 +168,8 @@
       // resetEditState(), so there is no state to tidy up here.
       emit("updated");
       close();
-    } catch {
+    } catch (error) {
+      titleError.value = (error as AxiosError).fieldErrors?.title?.[0] ?? "";
       // Distinct from the delete message above — the page previously reported
       // both through one `failed` event, so an edit failure said "delete failed".
       notifier.notify(t("gallery.updateFailed"), "error");
@@ -181,7 +189,13 @@
         :initial-src="image.url"
       />
 
-      <TitleField v-model="form.title" class="mt-4 font-bold" :editable="isEditing" />
+      <TitleField
+        v-model="form.title"
+        class="mt-4 font-bold"
+        :editable="isEditing"
+        :error="titleError"
+        @update:model-value="titleError = ''"
+      />
 
       <v-card-text class="text-base">
         <!--

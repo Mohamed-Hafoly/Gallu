@@ -252,7 +252,10 @@
     "empty": "No documents yet.",
     "imageCount": "no images | 1 image | {count} images",
     "backToDocuments": "All documents",
-    "forbidden": "You do not have access to this document."
+    "forbidden": "You do not have access to this document.",
+    "allImages": "All",
+    "yourImages": "Yours",
+    "noImagesYours": "You haven't uploaded anything here yet."
   },
   "profile": {
     "title": "Profile Information",

@@ -71,6 +71,44 @@ describe("client errors keep the server's own message", () => {
   });
 });
 
+/**
+ * The per-field bag, lifted here so one place knows Laravel's error shape and
+ * the dialogs can put a message on the field that caused it.
+ */
+describe("422 field errors", () => {
+  it("exposes the per-field bag alongside the message", async () => {
+    respondWith(422, {
+      message: "This document already has an image with that title.",
+      errors: {
+        title: ["This document already has an image with that title."],
+      },
+    });
+
+    const error = await captureError();
+
+    expect(error.fieldErrors).toEqual({
+      title: ["This document already has an image with that title."],
+    });
+    expect(error.userMessage).toBe(
+      "This document already has an image with that title.",
+    );
+  });
+
+  // Only a 422 carries `errors`. A caller that finds the key must be able to
+  // trust it names a field, so no other status may populate it.
+  it("leaves the bag unset on any other status", async () => {
+    respondWith(403, { message: "Forbidden.", errors: { title: ["nope"] } });
+
+    expect((await captureError()).fieldErrors).toBeUndefined();
+  });
+
+  it("leaves the bag unset on a 422 without an errors key", async () => {
+    respondWith(422, { message: "Something is wrong." });
+
+    expect((await captureError()).fieldErrors).toBeUndefined();
+  });
+});
+
 describe("server errors are never surfaced verbatim", () => {
   it("replaces a 500 body with the generic translated message", async () => {
     const leak =

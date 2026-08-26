@@ -20,11 +20,26 @@ export interface ImageListParams {
   search?: string;
   /** Absent for live rows; "only" for the pending-deletion table. */
   trashed?: "with" | "only";
+  /** Narrows to one document — what the document page's paged feed sends. */
+  document_id?: number;
+  /**
+   * Narrows to the caller's own images, for the document page's "Yours" chip.
+   * "All" is the *absence* of this param, not a value of it — the backend
+   * accepts no other string and 422s anything else.
+   */
+  owner?: "mine";
 }
 
 export interface ImagePage {
   items: Image[];
   total: number;
+  /**
+   * Where the listing stops. The infinite-scrolled feed needs this rather than
+   * inferring the end from a running item count, which would keep firing one
+   * doomed request past the last page whenever the total is an exact multiple
+   * of the page size.
+   */
+  lastPage: number;
 }
 
 interface UpdateImagePayload {
@@ -48,9 +63,13 @@ export const useImageStore = defineStore("image", () => {
   }
 
   /**
-   * One page of an admin table. Unlike fetchImages() this pages, sorts and
-   * searches server-side, so the total has to come back alongside the rows for
-   * the table's footer - same shape as fetchUsers in stores/user.ts.
+   * One page of a server-paginated listing. Unlike fetchImages() this pages,
+   * sorts and searches server-side, so the total has to come back alongside the
+   * rows - same shape as fetchUsers in stores/user.ts.
+   *
+   * Three callers: the admin screen's two tables, and the document page's
+   * infinite-scrolled feed, which sends document_id/page/per_page plus `owner`
+   * only when narrowing.
    *
    * `trashed` is what makes the admin screen's two tables two listings rather
    * than one filtered array: the live table sends nothing, the pending-deletion
@@ -61,7 +80,11 @@ export const useImageStore = defineStore("image", () => {
   async function fetchImagePage(params: ImageListParams): Promise<ImagePage> {
     const { data } = await api.get("/api/images", { params });
 
-    return { items: data.data as Image[], total: data.meta.total as number };
+    return {
+      items: data.data as Image[],
+      total: data.meta.total as number,
+      lastPage: data.meta.last_page as number,
+    };
   }
 
   async function createImage(payload: CreateImagePayload) {
@@ -73,7 +96,6 @@ export const useImageStore = defineStore("image", () => {
     formData.append("image", payload.image);
 
     const { data } = await api.post("/api/images", formData);
-    console.log("createImage response", data.data);
     return data.data as Image;
   }
 
@@ -86,14 +108,12 @@ export const useImageStore = defineStore("image", () => {
     if (payload.image) formData.append("image", payload.image);
 
     const { data } = await api.post(`/api/images/${id}`, formData);
-    console.log("updateImage response", data.data);
     return data.data as Image;
   }
 
   /** Soft delete — the row moves to the admin screen's pending-deletion table. */
   async function deleteImage(id: number) {
-    const response = await api.delete(`/api/images/${id}`);
-    console.log("deleteImage response", response.status);
+    await api.delete(`/api/images/${id}`);
   }
 
   async function restoreImage(id: number) {

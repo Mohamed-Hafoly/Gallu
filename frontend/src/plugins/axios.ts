@@ -10,6 +10,13 @@ declare module "axios" {
   interface AxiosError<T = unknown, D = any> {
     /** Message safe to display to the user; set by the response interceptor. */
     userMessage?: string;
+    /**
+     * Laravel's per-field validation bag from a 422, keyed by field name; set
+     * by the response interceptor. Present only on a 422, so a caller can tell
+     * "this field is wrong" apart from "the request failed" without re-reading
+     * the status.
+     */
+    fieldErrors?: Record<string, string[]>;
   }
 }
 
@@ -49,6 +56,16 @@ api.interceptors.response.use(
       status && status < 500 && typeof message === "string"
         ? message
         : i18n.global.t("common.serverError");
+
+    // Lifted here rather than in each dialog so there is one place that knows
+    // the shape of Laravel's error bag. Guarded on 422 alone: no other status
+    // carries `errors`, and a caller that finds the key can trust it names a
+    // field the user can actually fix.
+    const errors = error.response?.data?.errors;
+
+    if (status === 422 && errors && typeof errors === "object") {
+      error.fieldErrors = errors as Record<string, string[]>;
+    }
 
     return Promise.reject(error);
   },

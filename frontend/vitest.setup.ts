@@ -7,6 +7,19 @@ globalThis.ResizeObserver = class {
   disconnect() {}
 } as never;
 
+// jsdom ships no IntersectionObserver either, and useInfiniteScroll builds one
+// on mount, so any spec rendering the document page's image feed needs it. The
+// stub never fires — specs that exercise paging call the observed callback
+// themselves.
+globalThis.IntersectionObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
+} as never;
+
 // Needed by Vuetify's overlay location strategies, so any spec that mounts a
 // v-dialog or v-menu depends on it.
 Object.defineProperty(globalThis, "visualViewport", {

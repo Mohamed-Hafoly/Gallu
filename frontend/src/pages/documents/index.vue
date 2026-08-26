@@ -157,9 +157,15 @@
           </v-card-subtitle>
 
           <v-card-text class="pb-2 flex flex-col">
-            <p :class="isRtl ? 'text-right' : 'text-left'">
+            <v-chip
+              class="self-start"
+              :class="isRtl ? 'text-right' : 'text-left'"
+              color="tertiary"
+              size="small"
+              variant="elevated"
+            >
               {{ t("documents.imageCount", doc.images_count) }}
-            </p>
+            </v-chip>
 
             <!--
               min-h reserves the two lines line-clamp-2 allows, rather than
