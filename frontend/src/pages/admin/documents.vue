@@ -1,10 +1,14 @@
 <script setup lang="ts">
+  import type { DocumentListParams } from "@/stores/document";
   import type { Document } from "@/types/document";
   import type { Image } from "@/types/image";
   import { computed, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
   import { useRtl } from "vuetify";
   import { useDateFormat } from "@/composables/useDateFormat";
+  import { useDocumentStore } from "@/stores/document";
+  import { useImageStore } from "@/stores/image";
+  import { useNotifierStore } from "@/stores/notifier";
 
   /** What v-data-table-server hands back on @update:options. */
   interface TableOptions {
@@ -13,218 +17,76 @@
     sortBy: { key: string; order?: "asc" | "desc" }[];
   }
 
-  /** The same shape stores/user.ts's UserListParams has, so the eventual store
-   *  call takes this object unchanged. */
-  interface DocumentListParams {
+  /** Everything one of the two tables needs to fetch and render itself. */
+  interface TableState {
+    items: Document[];
+    total: number;
+    loading: boolean;
     page: number;
-    per_page: number;
-    sort_by?: string;
-    sort_order?: "asc" | "desc";
-    search?: string;
+    itemsPerPage: number;
+    sort: { key: string; order?: "asc" | "desc" }[];
+    selected: number[];
   }
 
-  /**
-   * The admin listing's row. Deliberately declared here rather than widening
-   * types/document.ts: that interface documents the real DocumentResource
-   * contract — including that its `images` is only the four most recent, for
-   * the card grid's cover — and admin-only fields there would make it lie
-   * about the API.
-   *
-   * `images` is the document's whole set, since the expanded sub-row lists all
-   * of them. `team` is nullable the way User["team"] is: a document created by
-   * a super-admin belongs to no team.
-   */
-  interface AdminDocument extends Omit<Document, "images"> {
-    images: Image[];
-    team: { id: number; name: string } | null;
-    updated_at: string;
+  function tableState(): TableState {
+    return {
+      items: [],
+      total: 0,
+      loading: false,
+      page: 1,
+      itemsPerPage: 10,
+      sort: [],
+      selected: [],
+    };
   }
-
-  // ---------------------------------------------------------------------------
-  // Mock data. TODO: delete this block and swap fetchPage() for
-  // useDocumentStore().fetchDocuments(params) once /api/documents grows an
-  // admin index with page/sort/search params and a meta.total.
-  // ---------------------------------------------------------------------------
-
-  const CREATORS = [
-    "Layla Haddad",
-    "Omar Nasser",
-    "Sofia Rossi",
-    "Tarek Mansour",
-    "Hana Yusuf",
-    "Daniel Meyer",
-  ];
-
-  const TEAMS: AdminDocument["team"][] = [
-    { id: 1, name: "Design" },
-    { id: 2, name: "Marketing" },
-    { id: 3, name: "Field Ops" },
-    null,
-  ];
-
-  const TITLES = [
-    "Site survey — north wing",
-    "Brand refresh moodboard",
-    "Q3 campaign assets",
-    "Warehouse inspection",
-    "Product photography raw",
-    "Onboarding screenshots",
-    "Trade show booth",
-    "Roof inspection 2026",
-    "Packaging concepts",
-    "Team offsite",
-    "Fleet condition report",
-    "Storefront signage",
-  ];
-
-  const DESCRIPTIONS = [
-    "Everything captured on the first walkthrough, before any of the remedial work was scheduled or approved.",
-    "Reference shots collected from the agency's second round.",
-    null,
-    "Uploaded straight off the camera — not colour-graded yet.",
-    null,
-    "Kept for the insurance claim; do not delete before the case closes.",
-  ];
-
-  /** Deterministic pseudo-random so the fixture is stable across reloads. */
-  function pick<T>(list: T[], seed: number): T {
-    return list[(seed * 7 + 3) % list.length];
-  }
-
-  function mockImages(docSeed: number, count: number, owner: string): Image[] {
-    return Array.from({ length: count }, (_, index) => {
-      const seed = docSeed * 100 + index;
-
-      return {
-        id: seed,
-        // Exactly one Arabic title in the whole fixture — the first image of
-        // document 1 — so an RTL string sitting among LTR ones is visible in
-        // the nested table without hunting for a real one.
-        title:
-          docSeed === 1 && index === 0
-            ? "بوتفليقة ه"
-            : `IMG_${String(4000 + seed)}`,
-        description: null,
-        url: `https://picsum.photos/seed/${seed}/1200/800`,
-        thumb_url: `https://picsum.photos/seed/${seed}/400/400`,
-        categories: [],
-        document_id: docSeed,
-        // Every third image is uploaded by someone other than the document's
-        // own creator — the case the nested table exists to make visible.
-        creator: index % 3 === 2 ? pick(CREATORS, seed) : owner,
-        created_at: new Date(
-          Date.UTC(2026, 1 + (seed % 6), 1 + (seed % 27), 9, seed % 60),
-        ).toISOString(),
-        updated_at: new Date(
-          Date.UTC(2026, 1 + (seed % 6), 1 + (seed % 27), 9, seed % 60),
-        ).toISOString(),
-      };
-    });
-  }
-
-  const MOCK_DOCUMENTS: AdminDocument[] = Array.from(
-    { length: 35 },
-    (_, index) => {
-      const id = index + 1;
-      const creator = pick(CREATORS, id);
-      // Roughly every seventh document is empty, so the "no images" branch is
-      // reachable without editing the fixture.
-      const imageCount = id % 7 === 0 ? 0 : 1 + ((id * 3) % 6);
-      const created = new Date(
-        Date.UTC(2026, id % 8, 1 + (id % 28), 8, (id * 13) % 60),
-      );
-
-      return {
-        id,
-        title: `${pick(TITLES, id)} #${id}`,
-        description: pick(DESCRIPTIONS, id),
-        images: mockImages(id, imageCount, creator),
-        images_count: imageCount,
-        creator,
-        team: pick(TEAMS, id),
-        created_at: created.toISOString(),
-        updated_at: new Date(
-          created.getTime() + ((id * 37) % 90) * 86_400_000,
-        ).toISOString(),
-      };
-    },
-  );
-
-  /**
-   * Stands in for the server: filters, sorts and slices the fixture, returning
-   * the same `{ items, total }` that stores/user.ts's fetchUsers does. The
-   * total is the *filtered* length, not the fixture's, or the footer would keep
-   * offering pages a search has emptied.
-   */
-  async function fetchPage(
-    p: DocumentListParams,
-  ): Promise<{ items: AdminDocument[]; total: number }> {
-    await new Promise((resolve) => setTimeout(resolve, 250));
-
-    let rows = [...MOCK_DOCUMENTS];
-
-    if (p.search) {
-      const term = p.search.toLowerCase();
-      rows = rows.filter((row) =>
-        [row.title, row.description, row.creator, row.team?.name].some(
-          (field) => field?.toLowerCase().includes(term),
-        ),
-      );
-    }
-
-    if (p.sort_by) {
-      const direction = p.sort_order === "desc" ? -1 : 1;
-      const key = p.sort_by as keyof AdminDocument;
-
-      rows.sort((a, b) => {
-        const left = a[key];
-        const right = b[key];
-
-        if (typeof left === "number" && typeof right === "number") {
-          return (left - right) * direction;
-        }
-
-        return (
-          String(left ?? "").localeCompare(String(right ?? "")) * direction
-        );
-      });
-    }
-
-    const total = rows.length;
-    const start = (p.page - 1) * p.per_page;
-
-    return { items: rows.slice(start, start + p.per_page), total };
-  }
-
-  // ---------------------------------------------------------------------------
 
   const { t } = useI18n();
   const { isRtl } = useRtl();
   const { formatDateTime } = useDateFormat();
+  const documentStore = useDocumentStore();
+  const imageStore = useImageStore();
+  const notifier = useNotifierStore();
 
-  const documents = ref<AdminDocument[]>([]);
-  const total = ref(0);
-  const loading = ref(false);
+  /**
+   * The live and pending-deletion tables are two independent listings, one
+   * request each, differing only in the `trashed` parameter — the same split
+   * admin/images.vue uses. They keep separate page and sort state, and both
+   * reload after any mutation, because a delete or restore moves a row from one
+   * to the other.
+   */
+  const live = ref<TableState>(tableState());
+  const trash = ref<TableState>(tableState());
   const search = ref("");
-
-  // The page controls this so the search watcher can force a jump back to page
-  // one; the table reads it back through :page.
-  const page = ref(1);
-  const itemsPerPage = ref(10);
-
-  // The last options the table emitted, replayed on every reload so the server
-  // stays the source of truth for whatever page is on screen.
-  const lastSort = ref<{ key: string; order?: "asc" | "desc" }[]>([]);
-
-  // Ids, because item-value defaults to "id" and return-object is off — same as
-  // the users and categories screens.
-  const selected = ref<number[]>([]);
 
   // Typed string[] to satisfy v-data-table's declared `readonly string[]`, even
   // though at runtime it writes the raw item value — a number — straight in.
-  // Nothing here reads the contents, so the mismatch stays harmless; only reset
-  // it in load(), and do not compare against it.
+  // The expand watcher below coerces each entry with Number() rather than
+  // trusting the declared type. Only the live table expands.
   const expanded = ref<string[]>([]);
+
+  /**
+   * A document's images, fetched when its row is first expanded.
+   *
+   * The listing itself carries none — it omits the `cover` flag, so
+   * DocumentResource returns no `images` key at all — which keeps the table a
+   * plain one instead of serialising four images, their media and their
+   * categories per row. Keyed by document id and kept after collapse, so
+   * re-expanding the same row costs nothing; loadLive() clears it.
+   */
+  const images = ref<Record<number, Image[]>>({});
+  const imagesLoading = ref<Set<number>>(new Set());
+
+  // The document behind whichever dialog is open. Held rather than passed
+  // inline so the dialogs keep rendering their content while closing.
+  const editing = ref<Document | null>(null);
+  const editOpen = ref(false);
+  const deleting = ref<Document | null>(null);
+  const deleteOpen = ref(false);
+  const deletingInFlight = ref(false);
+  const bulkDeleteOpen = ref(false);
+  const bulkInFlight = ref(false);
+  const restoringId = ref<number | null>(null);
+  const createOpen = ref(false);
 
   // Vuetify renders the sort arrow as a bare VIcon with no colour prop and no
   // slot of its own, so the only way to tint it is to reach it from the class
@@ -241,6 +103,12 @@
       title: t("admin.documents.documentTitle"),
       key: "title",
       sortable: true,
+      // Capped for the same reason as the description below: title is otherwise
+      // the only elastic column, so one long value stretches it, wraps the cell
+      // and makes every row in that table taller than the other's. Narrower than
+      // description's 320 because real titles are short.
+      maxWidth: 240,
+      nowrap: true,
       cellProps: {
         dir: "auto",
         class: isRtl.value ? "text-right" : "text-left",
@@ -265,12 +133,31 @@
         class: isRtl.value ? "text-right" : "text-left",
       },
     },
-    // Not sortable, for the same reason as the users screen's team column: the
-    // team will not be a column on `documents`, so there is nothing to order by.
-    { title: t("admin.documents.team"), key: "team", sortable: false },
+    // Not sortable, and deliberately absent from DocumentController::SORTABLE:
+    // ordering by the `team_id` column would sort by insertion order rather
+    // than by the name the cell shows, which reads as a broken sort.
+    {
+      title: t("admin.documents.team"),
+      key: "team",
+      sortable: false,
+      // Team names are free text and can be long; same cap as creator.
+      maxWidth: 160,
+      nowrap: true,
+    },
     // The *document's* creator — who made the folder. Each image carries its
     // own, shown in the expanded sub-table, and the two often differ.
-    { title: t("admin.documents.creator"), key: "creator", sortable: true },
+    // Capped and nowrapped like the title above — this is the column that
+    // actually drives row height: a long name such as "Prof. Elmore Smitham III"
+    // wraps to three or four lines in a ~100px column, and wraps to a different
+    // number in each table, since the trashed one has an extra column competing
+    // for width.
+    {
+      title: t("admin.documents.creator"),
+      key: "creator",
+      sortable: true,
+      maxWidth: 160,
+      nowrap: true,
+    },
     { title: t("common.createdAt"), key: "created_at", sortable: true },
     { title: t("common.updatedAt"), key: "updated_at", sortable: true },
     { title: t("admin.documents.actions"), key: "actions", sortable: false },
@@ -284,11 +171,21 @@
       width: 96,
     },
     { title: t("admin.documents.images.id"), key: "id", sortable: false },
-    { title: t("admin.documents.images.title"), key: "title", sortable: false },
+    // Capped like the outer table's title: these are image titles, so the same
+    // long value can turn up here and stretch the sub-table.
+    {
+      title: t("admin.documents.images.title"),
+      key: "title",
+      sortable: false,
+      maxWidth: 240,
+      nowrap: true,
+    },
     {
       title: t("admin.documents.images.creator"),
       key: "creator",
       sortable: false,
+      maxWidth: 160,
+      nowrap: true,
     },
     {
       title: t("admin.documents.images.createdAt"),
@@ -297,64 +194,231 @@
     },
   ]);
 
-  function params(): DocumentListParams {
-    const [sort] = lastSort.value;
+  const trashedHeaders = computed(() => [
+    ...headers.value.filter((header) => header.key !== "actions"),
+    { title: t("admin.documents.deletedAt"), key: "deleted_at", sortable: true },
+    { title: t("admin.documents.actions"), key: "actions", sortable: false },
+  ]);
+
+  function params(state: TableState, trashed?: "only"): DocumentListParams {
+    const [sort] = state.sort;
 
     return {
-      page: page.value,
-      per_page: itemsPerPage.value,
+      page: state.page,
+      per_page: state.itemsPerPage,
       sort_by: sort?.key,
       sort_order: sort?.order,
       search: search.value || undefined,
+      trashed,
     };
   }
 
-  async function load() {
+  async function loadLive() {
     // Every page, sort and search change routes through here, so neither the
     // selection nor the expansion can hold rows that are no longer on screen.
-    selected.value = [];
+    // The image cache goes with them: keyed by document id, it would otherwise
+    // survive into a listing those ids are no longer part of.
+    live.value.selected = [];
     expanded.value = [];
-    loading.value = true;
+    images.value = {};
+    live.value.loading = true;
     try {
-      const result = await fetchPage(params());
-      documents.value = result.items;
-      total.value = result.total;
+      const result = await documentStore.fetchDocumentPage(params(live.value));
+      live.value.items = result.items;
+      live.value.total = result.total;
     } finally {
-      loading.value = false;
+      live.value.loading = false;
+    }
+  }
+
+  async function loadTrash() {
+    trash.value.selected = [];
+    trash.value.loading = true;
+    try {
+      const result = await documentStore.fetchDocumentPage(
+        params(trash.value, "only"),
+      );
+      trash.value.items = result.items;
+      trash.value.total = result.total;
+    } finally {
+      trash.value.loading = false;
     }
   }
 
   /**
-   * The table fires this once on mount as well as on every page/sort change, so
-   * there is no onMounted(load) — adding one would double-fetch.
+   * Both tables, for anything that moves a row between them. Reloading only the
+   * table that was acted on would leave the other showing a row it no longer
+   * holds — which is why every mutation below calls this rather than one loader.
    */
-  function onOptions(options: TableOptions) {
-    page.value = options.page;
-    itemsPerPage.value = options.itemsPerPage;
-    lastSort.value = options.sortBy;
-
-    load();
+  function loadBoth() {
+    return Promise.all([loadLive(), loadTrash()]);
   }
 
-  // Debounced so a typed word is one request rather than one per keystroke. The
-  // reset to page one matters: searching from page 4 would otherwise land on an
-  // empty page of a much shorter result set.
+  /**
+   * Each table fires this once on mount as well as on every page/sort change,
+   * so there is no onMounted(load) — adding one would double-fetch.
+   */
+  function onLiveOptions(options: TableOptions) {
+    live.value.page = options.page;
+    live.value.itemsPerPage = options.itemsPerPage;
+    live.value.sort = options.sortBy;
+
+    loadLive();
+  }
+
+  function onTrashOptions(options: TableOptions) {
+    trash.value.page = options.page;
+    trash.value.itemsPerPage = options.itemsPerPage;
+    trash.value.sort = options.sortBy;
+
+    loadTrash();
+  }
+
+  // Debounced so a typed word is two requests rather than two per keystroke.
+  // Both tables reset to page one: searching from page 4 would otherwise land
+  // on an empty page of a much shorter result set.
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   watch(search, () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
-      page.value = 1;
-      load();
+      live.value.page = 1;
+      trash.value.page = 1;
+      loadBoth();
     }, 300);
   });
 
-  // TODO: wire once /api/documents gains store/update/destroy and a policy. The
-  // controls are rendered so the layout is final; nothing mutates the fixture,
-  // which is why there is no ConfirmDialog, no FormDialog and no notifier here.
-  function openCreate() {}
-  function openEdit() {}
-  function openDelete() {}
-  function bulkDestroy() {}
+  /**
+   * Fetch the images of every row that has just been expanded.
+   *
+   * Guarded on the cache and the in-flight set, so collapsing and re-expanding
+   * a row does not re-request it, and a double-toggle cannot fire two calls for
+   * the same id. The filter is applied server-side after the team scope, so an
+   * id from another team comes back empty rather than leaking.
+   */
+  watch(expanded, async (ids) => {
+    const pending = ids
+      .map(Number)
+      .filter((id) => !(id in images.value) && !imagesLoading.value.has(id));
+
+    await Promise.all(
+      pending.map(async (id) => {
+        imagesLoading.value.add(id);
+        try {
+          images.value[id] = await imageStore.fetchImages(id);
+        } catch {
+          notifier.notify(t("admin.documents.imagesLoadFailed"), "error");
+        } finally {
+          imagesLoading.value.delete(id);
+          // Set mutations are not reactive on their own; reassigning is what
+          // re-renders the row's loader.
+          imagesLoading.value = new Set(imagesLoading.value);
+        }
+      }),
+    );
+  });
+
+  function openCreate() {
+    createOpen.value = true;
+  }
+
+  function openEdit(document_: Document) {
+    editing.value = document_;
+    editOpen.value = true;
+  }
+
+  function openDelete(document_: Document) {
+    deleting.value = document_;
+    deleteOpen.value = true;
+  }
+
+  async function onCreated() {
+    await loadBoth();
+    notifier.notify(t("admin.documents.created"));
+  }
+
+  async function onUpdated() {
+    await loadBoth();
+    notifier.notify(t("admin.documents.updated"));
+  }
+
+  async function destroy() {
+    if (!deleting.value) return;
+
+    deletingInFlight.value = true;
+    try {
+      await documentStore.deleteDocument(deleting.value.id);
+      await loadBoth();
+      notifier.notify(t("admin.documents.deleted"));
+      deleteOpen.value = false;
+    } catch {
+      notifier.notify(t("admin.documents.deleteFailed"), "error");
+    } finally {
+      deletingInFlight.value = false;
+    }
+  }
+
+  async function restore(document_: Document) {
+    restoringId.value = document_.id;
+    try {
+      await documentStore.restoreDocument(document_.id);
+      await loadBoth();
+      notifier.notify(t("admin.documents.restored"));
+    } catch {
+      notifier.notify(t("admin.documents.restoreFailed"), "error");
+    } finally {
+      restoringId.value = null;
+    }
+  }
+
+  /**
+   * There is no batch endpoint, so each id is its own request. allSettled rather
+   * than all: one rejection should not abandon the rest, and the count of
+   * failures is what gets reported.
+   */
+  async function runBulk(
+    ids: number[],
+    action: (id: number) => Promise<unknown>,
+    successKey: string,
+    failureKey: string,
+  ) {
+    bulkInFlight.value = true;
+    try {
+      const results = await Promise.allSettled(ids.map((id) => action(id)));
+      const failed = results.filter((r) => r.status === "rejected").length;
+
+      // Also clears both selections, since each loader resets its own.
+      await loadBoth();
+
+      if (failed > 0) {
+        notifier.notify(t(failureKey, { count: failed }), "error");
+      } else {
+        notifier.notify(t(successKey, { count: ids.length }));
+      }
+    } finally {
+      bulkInFlight.value = false;
+    }
+  }
+
+  async function bulkDestroy() {
+    await runBulk(
+      [...live.value.selected],
+      (id) => documentStore.deleteDocument(id),
+      "admin.documents.bulkDeleted",
+      "admin.documents.bulkDeleteFailed",
+    );
+
+    bulkDeleteOpen.value = false;
+  }
+
+  // No confirmation, unlike bulk delete: restoring is not destructive.
+  async function bulkRestore() {
+    await runBulk(
+      [...trash.value.selected],
+      (id) => documentStore.restoreDocument(id),
+      "admin.documents.bulkRestored",
+      "admin.documents.bulkRestoreFailed",
+    );
+  }
 </script>
 
 <template>
@@ -381,19 +445,19 @@
     <!-- Server variant: no :search prop, the term rides along in the request
          params instead. -->
     <v-data-table-server
-      v-model="selected"
+      v-model="live.selected"
       v-model:expanded="expanded"
       :header-props="headerProps"
       :headers="headers"
-      :items="documents"
-      :items-length="total"
-      :items-per-page="itemsPerPage"
-      :loading="loading"
+      :items="live.items"
+      :items-length="live.total"
+      :items-per-page="live.itemsPerPage"
+      :loading="live.loading"
       :no-data-text="t('admin.documents.empty')"
-      :page="page"
+      :page="live.page"
       show-expand
       show-select
-      @update:options="onOptions"
+      @update:options="onLiveOptions"
     >
       <template #top>
         <div class="bg-primary-darken-1 p-4 text-center">
@@ -414,16 +478,19 @@
           </v-btn>
         </div>
 
-        <div v-if="selected.length > 0" class="p-3">
+        <div v-if="live.selected.length > 0" class="p-3">
           <v-btn
             block
             color="error"
+            :loading="bulkInFlight"
             prepend-icon="mdi-delete"
             variant="elevated"
-            @click="bulkDestroy"
+            @click="bulkDeleteOpen = true"
           >
             {{
-              t("admin.documents.deleteSelected", { count: selected.length })
+              t("admin.documents.deleteSelected", {
+                count: live.selected.length,
+              })
             }}
           </v-btn>
         </div>
@@ -462,7 +529,7 @@
             size="small"
             :title="t('common.edit')"
             variant="text"
-            @click="openEdit"
+            @click="openEdit(item)"
           />
 
           <v-btn
@@ -471,7 +538,7 @@
             size="small"
             :title="t('common.delete')"
             variant="text"
-            @click="openDelete"
+            @click="openDelete(item)"
           />
         </div>
       </template>
@@ -481,15 +548,25 @@
       <template #expanded-row="{ columns, item }">
         <tr>
           <td class="p-0" :colspan="columns.length">
+            <!-- The listing carries no images, so the row fetches its own on
+                 first expand. Three states, in order: still loading, loaded
+                 and empty, loaded with rows. -->
+            <v-progress-linear
+              v-if="imagesLoading.has(item.id)"
+              class="my-4"
+              indeterminate
+            />
+
             <p
-              v-if="item.images.length === 0"
+              v-else-if="(images[item.id]?.length ?? 0) === 0"
               class="py-4 text-center opacity-60"
             >
               {{ t("admin.documents.noImages") }}
             </p>
 
-            <!-- Client-side v-data-table, not the -server variant: a document's
-                 images arrive with the row, so there is nothing to page. -->
+            <!-- Client-side v-data-table, not the -server variant: the fetch
+                 above returns a document's whole set, so there is nothing left
+                 to page. -->
             <!-- No density and no background of its own: it inherits the
                  parent table's surface so the two read as one table, and rows
                  stay the same height as the documents above them. -->
@@ -498,7 +575,7 @@
               :header-props="headerProps"
               :headers="imageHeaders"
               hide-default-footer
-              :items="item.images"
+              :items="images[item.id]"
               :items-per-page="-1"
             >
               <template #top>
@@ -521,6 +598,127 @@
         </tr>
       </template>
     </v-data-table-server>
+
+    <!-- No show-expand: a trashed document's images are trashed with it, so
+         there is nothing live to list underneath. -->
+    <v-data-table-server
+      v-model="trash.selected"
+      class="mt-8"
+      :header-props="headerProps"
+      :headers="trashedHeaders"
+      :items="trash.items"
+      :items-length="trash.total"
+      :items-per-page="trash.itemsPerPage"
+      :loading="trash.loading"
+      :no-data-text="t('admin.documents.trashedEmpty')"
+      :page="trash.page"
+      show-select
+      @update:options="onTrashOptions"
+    >
+      <template #top>
+        <div class="bg-primary-darken-1 p-4 text-center">
+          <h2 class="text-xl tracking-wider">
+            {{ t("admin.documents.trashedTitle") }}
+          </h2>
+
+          <p class="mt-2">
+            <span class="text-tertiary opacity-100">* </span>
+
+            <span class="opacity-80">{{
+              t("admin.documents.trashedTitleNote")
+            }}</span>
+          </p>
+        </div>
+
+        <!-- No confirmation, unlike the bulk delete above: restoring is not
+             destructive. -->
+        <div v-if="trash.selected.length > 0" class="p-3">
+          <v-btn
+            block
+            color="tertiary"
+            :loading="bulkInFlight"
+            prepend-icon="mdi-restore"
+            variant="elevated"
+            @click="bulkRestore"
+          >
+            {{
+              t("admin.documents.restoreSelected", {
+                count: trash.selected.length,
+              })
+            }}
+          </v-btn>
+        </div>
+      </template>
+
+      <template #item.description="{ item }">
+        {{ item.description || t("common.emptyValue") }}
+      </template>
+
+      <template #item.team="{ item }">
+        {{ item.team?.name ?? t("common.emptyValue") }}
+      </template>
+
+      <template #item.created_at="{ item }">
+        {{ formatDateTime(item.created_at) }}
+      </template>
+
+      <template #item.updated_at="{ item }">
+        {{ formatDateTime(item.updated_at) }}
+      </template>
+
+      <template #item.deleted_at="{ item }">
+        {{ formatDateTime(item.deleted_at) }}
+      </template>
+
+      <!-- Restore only: the edit endpoint refuses a trashed row, and there is
+           no permanent delete. -->
+      <template #item.actions="{ item }">
+        <v-btn
+          color="tertiary"
+          icon="mdi-restore"
+          :loading="restoringId === item.id"
+          size="small"
+          :title="t('admin.documents.restore')"
+          variant="text"
+          @click="restore(item)"
+        />
+      </template>
+    </v-data-table-server>
+
+    <ConfirmDialog
+      v-model="deleteOpen"
+      confirm-icon="mdi-delete"
+      :confirm-label="t('common.delete')"
+      :loading="deletingInFlight"
+      :message="
+        t('admin.documents.deleteConfirm', { title: deleting?.title ?? '' })
+      "
+      @confirm="destroy"
+    />
+
+    <ConfirmDialog
+      v-model="bulkDeleteOpen"
+      confirm-icon="mdi-delete"
+      :confirm-label="t('common.delete')"
+      :loading="bulkInFlight"
+      :message="
+        t('admin.documents.bulkDeleteConfirm', { count: live.selected.length })
+      "
+      @confirm="bulkDestroy"
+    />
+
+    <!-- Success is notified here, failure inside the dialog — the same split
+         the teams screen uses. -->
+    <DocumentCreateDialog v-model="createOpen" @created="onCreated" />
+
+    <!-- v-if, so the required non-null prop typechecks; the separate editOpen
+         boolean is what keeps content rendered during the close transition. -->
+    <DocumentEditDialog
+      v-if="editing"
+      v-model="editOpen"
+      :document="editing"
+      @updated="onUpdated"
+    />
   </v-container>
 </template>
 

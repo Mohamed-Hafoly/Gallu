@@ -2,4 +2,17 @@
   code, pre, .v-code {
     font-family: var(--font-mono);
   }
+
+  // Vuetify ships .v-table__wrapper as `overflow: auto`. Row heights are
+  // fractional (63.x px), so a table's scrollHeight rounds up a pixel or two
+  // past its clientHeight and the browser paints a full-height vertical thumb
+  // that scrolls nothing. Clipping the y axis removes it; x stays `auto`, so a
+  // table wider than its container still scrolls sideways.
+  //
+  // Safe only because no table here passes `height`/`max-height`, which is what
+  // adds .v-table--fixed-height and means real vertical scrolling. That variant
+  // is excluded so it keeps working if a table ever needs it.
+  .v-table:not(.v-table--fixed-height) > .v-table__wrapper {
+    overflow-y: hidden;
+  }
 }

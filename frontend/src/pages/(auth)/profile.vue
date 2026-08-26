@@ -111,7 +111,7 @@
 </script>
 
 <template>
-  <v-container class="flex items-center justify-center min-h-full">
+  <v-container class="flex min-h-[calc(100dvh-var(--v-layout-top,0px))] items-center justify-center">
     <v-card
       class="py-8 px-6 flex flex-col justify-center"
       :disabled="isSubmitting"

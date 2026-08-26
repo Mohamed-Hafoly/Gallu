@@ -89,6 +89,13 @@
       title: t("admin.images.imageTitle"),
       key: "title",
       sortable: true,
+      // Capped for the same reason as the description below, and it matters
+      // more here: title is otherwise the only elastic column, so one long
+      // value stretches it, wraps the cell and makes every row in *that* table
+      // taller than the other's. Narrower than description's 320 because real
+      // titles run to about 28 characters.
+      maxWidth: 240,
+      nowrap: true,
       // Titles are user-entered and can be Arabic among English ones, so the
       // same dir="auto" + pinned-alignment pairing the description gets.
       cellProps: {
@@ -116,7 +123,18 @@
     },
     // Sortable, even though `creator` is not a column on `images` — the backend
     // maps it to a correlated subselect against users.name.
-    { title: t("admin.images.creator"), key: "creator", sortable: true },
+    // Capped and nowrapped like the title above — this is the column that
+    // actually drives row height: a long name such as "Prof. Elmore Smitham III"
+    // wraps to three or four lines in a ~100px column, and wraps to a different
+    // number in each table, since the trashed one has an extra column competing
+    // for width.
+    {
+      title: t("admin.images.creator"),
+      key: "creator",
+      sortable: true,
+      maxWidth: 160,
+      nowrap: true,
+    },
     { title: t("admin.images.document"), key: "document_id", sortable: true },
     { title: t("common.createdAt"), key: "created_at", sortable: true },
     { title: t("common.updatedAt"), key: "updated_at", sortable: true },

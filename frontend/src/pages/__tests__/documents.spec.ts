@@ -41,7 +41,10 @@ function doc(images: Image[], imagesCount: number): Document {
     images,
     images_count: imagesCount,
     creator: "Ada Lovelace",
+    team: { id: 1, name: "Design" },
     created_at: "2026-08-24T10:00:00.000000Z",
+    updated_at: "2026-08-24T10:00:00.000000Z",
+    deleted_at: null,
   };
 }
 

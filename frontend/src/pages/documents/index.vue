@@ -13,6 +13,13 @@
   const documentStore = useDocumentStore();
   const router = useRouter();
 
+  /**
+   * The card's cover images. Defaulted because DocumentResource only returns
+   * the key when the request asks for it — this page's fetchDocuments() sends
+   * cover: 1, so it is always present here, but the type cannot know that.
+   */
+  const covers = (document_: Document) => document_.images ?? [];
+
   const documents = ref<Document[]>([]);
   const loading = ref(true);
 
@@ -96,17 +103,17 @@
             spilling, and `cover` keeps filling the quadrant.
           -->
           <div
-            v-if="doc.images.length > 0"
+            v-if="covers(doc).length > 0"
             class="grid min-h-0 flex-none grid-cols-2 grid-rows-2 gap-0.5 bg-primary"
             style="aspect-ratio: 3 / 2"
           >
             <template v-for="cell in 4" :key="cell">
               <v-img
-                v-if="doc.images[cell - 1]"
-                :alt="doc.images[cell - 1].title"
+                v-if="covers(doc)[cell - 1]"
+                :alt="covers(doc)[cell - 1].title"
                 class="bg-black brightness-65 transition duration-200 group-hover:brightness-100"
                 cover
-                :src="doc.images[cell - 1].thumb_url"
+                :src="covers(doc)[cell - 1].thumb_url"
               >
                 <template #placeholder>
                   <div class="flex items-center justify-center h-full">

@@ -23,12 +23,7 @@
     </template>
 
     <v-main>
-      <div
-        id="main-scroll"
-        class="h-[calc(100dvh-var(--v-layout-top,0px))] overflow-y-auto"
-      >
-        <router-view />
-      </div>
+      <router-view />
     </v-main>
 
     <!-- The one snackbar for the whole app; anything can raise it through the
