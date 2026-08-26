@@ -44,10 +44,22 @@ class DocumentPolicy
         return $this->update($user, $document);
     }
 
+    /**
+     * Gates the trashed *query*, not an instance — there is no document to check
+     * until the rows come back. Mirrors ImagePolicy::viewTrashed: team admins
+     * get their own team's trash, since scopeVisibleTo() still narrows it.
+     */
+    public function viewTrashed(User $user): bool
+    {
+        return $user->role() === RoleName::Admin;
+    }
 
+    /**
+     * Same rule as delete: whoever could remove a document can put it back.
+     */
     public function restore(User $user, Document $document): bool
     {
-        return false;
+        return $this->update($user, $document);
     }
 
     /**

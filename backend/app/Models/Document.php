@@ -36,6 +36,52 @@ class Document extends Model
         'description',
     ];
 
+    /**
+     * Keep a document's images in step with its own trashed state.
+     *
+     * The only model events in the app. They live here rather than in
+     * DocumentController::destroy() because the invariant — an image cannot
+     * outlive the document that gives it a place in the hierarchy, which is what
+     * the images.document_id migration says — has to hold for the bulk delete,
+     * for tinker, and for anything added later, not just for one controller
+     * action.
+     */
+    protected static function booted(): void
+    {
+        // `deleted`, not `deleting`: deleted_at is not stamped until after the
+        // save, and the cascade copies it so the two agree.
+        static::deleted(function (Document $document): void {
+            // A hard delete is the database's job — images.document_id is
+            // ON DELETE CASCADE. Repeating it here would be a second, slower
+            // truth, and it would miss rows that are already soft-deleted.
+            if ($document->isForceDeleting()) {
+                return;
+            }
+
+            // The relation carries Image's own soft-delete scope, so this only
+            // touches images that are still live: an image already in the bin on
+            // its own is not the document's to take, and must not be its to
+            // return either. The flag is what records that difference — see the
+            // migration for why deleted_at cannot be used to infer it.
+            $document->images()->update([
+                'deleted_at' => $document->deleted_at,
+                'trashed_with_document' => true,
+            ]);
+        });
+
+        // `restoring`, not `restored`, so a failure aborts the whole restore
+        // rather than leaving the document back and its images behind.
+        static::restoring(function (Document $document): void {
+            // One raw update rather than restore() plus a second write to clear
+            // the flag — and it fires no Image events, which is what keeps
+            // Image::booted()'s own flag-clearing out of this path.
+            $document->images()
+                ->onlyTrashed()
+                ->where('trashed_with_document', true)
+                ->update(['deleted_at' => null, 'trashed_with_document' => false]);
+        });
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

@@ -45,6 +45,22 @@ class Image extends Model implements HasMedia
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * Clear the "went down with its document" mark on any individual restore.
+     *
+     * Without this the flag could go stale: an image restored on its own while
+     * its document is still trashed would keep the mark, and restoring the
+     * document later would revive it a second time even though it had since
+     * been binned deliberately. Document::booted()'s cascade-restore writes
+     * through the query builder, so it fires no events and never reaches here.
+     */
+    protected static function booted(): void
+    {
+        static::restoring(function (Image $image): void {
+            $image->trashed_with_document = false;
+        });
+    }
+
     public function document(): BelongsTo
     {
         return $this->belongsTo(Document::class);

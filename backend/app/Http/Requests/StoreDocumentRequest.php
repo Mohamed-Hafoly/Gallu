@@ -28,6 +28,16 @@ class StoreDocumentRequest extends FormRequest
                 Rule::unique('documents', 'title')->where('user_id', $this->user()->id)->withoutTrashed(),
             ],
             'description' => ['nullable', 'string', 'max:400'],
+            // Chosen in the create dialog rather than derived from the session,
+            // so a super-admin - who belongs to no team - can still file a
+            // document under one. The controller is what stops everyone else
+            // naming a team that is not their own. Trashed teams are excluded:
+            // a soft-deleted team is not offered by /api/teams/picker either.
+            'team_id' => [
+                'required',
+                'integer',
+                Rule::exists('teams', 'id')->whereNull('deleted_at'),
+            ],
         ];
     }
 }

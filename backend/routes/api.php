@@ -29,8 +29,9 @@ Route::middleware(['auth:sanctum', SetPermissionsTeam::class])->group(function (
     Route::post('/documents', [DocumentController::class, 'store']);
     Route::patch('/documents/{document}', [DocumentController::class, 'update']);
     Route::delete('/documents/{document}', [DocumentController::class, 'destroy']);
-    Route::post('/documents/{document}', [DocumentController::class, 'restore']);
-
+    // withTrashed(), like the image, category and team restore routes: without
+    // it the soft-deleted document being restored 404s at binding.
+    Route::post('/documents/{document}/restore', [DocumentController::class, 'restore'])->withTrashed();
 
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/categories/picker', [CategoryController::class, 'picker']);

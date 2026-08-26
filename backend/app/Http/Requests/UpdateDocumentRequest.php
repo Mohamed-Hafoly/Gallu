@@ -31,6 +31,15 @@ class UpdateDocumentRequest extends FormRequest
                     ->ignore($this->route('document')),
             ],
             'description' => ['nullable', 'string', 'max:400'],
+            // Editable, like on create: the edit dialog offers the same picker.
+            // The controller is what stops a non-super-admin moving a document
+            // out of their own team. Trashed teams are excluded, since
+            // /api/teams/picker does not offer them either.
+            'team_id' => [
+                'required',
+                'integer',
+                Rule::exists('teams', 'id')->whereNull('deleted_at'),
+            ],
         ];
     }
 }

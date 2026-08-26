@@ -17,42 +17,71 @@ it('requires authentication to create a document', function () {
 
 // ---------------------------------------------------------------- creation
 
-it('lets an admin create a document, stamped with their team', function () {
+it('lets an admin create a document in their own team', function () {
     ['admin' => $admin, 'team' => $team] = teamFixture();
 
     actingAs($admin)
-        ->postJson('/api/documents', ['title' => 'Team doc'])
+        ->postJson('/api/documents', ['title' => 'Team doc', 'team_id' => $team->id])
         ->assertCreated()
         ->assertJsonPath('data.creator', $admin->name)
-        ->assertJsonCount(0, 'data.images');
+        ->assertJsonPath('data.images_count', 0);
 
     expect(Document::latest('id')->first()->team_id)->toBe($team->id);
 });
 
 // The central rule of the redesign: documents are an admin's job.
 it('refuses to let a member create a document', function () {
-    ['member' => $member] = teamFixture();
+    ['member' => $member, 'team' => $team] = teamFixture();
 
     actingAs($member)
-        ->postJson('/api/documents', ['title' => 'Sneaky'])
+        ->postJson('/api/documents', ['title' => 'Sneaky', 'team_id' => $team->id])
         ->assertForbidden();
 });
 
-it('lets a super admin create a team less document', function () {
+// The team now comes from the create dialog's picker, so it has to be checked
+// rather than trusted: only a super-admin sits above teams.
+it('lets a super admin create a document under any team', function () {
+    $team = Team::factory()->create();
+
     $document = actingAs(superAdmin())
-        ->postJson('/api/documents', ['title' => 'Global'])
+        ->postJson('/api/documents', ['title' => 'Global', 'team_id' => $team->id])
         ->assertCreated()
         ->json('data.id');
 
-    expect(Document::find($document)->team_id)->toBeNull();
+    expect(Document::find($document)->team_id)->toBe($team->id);
+});
+
+it('refuses to let an admin file a document under another team', function () {
+    ['admin' => $admin] = teamFixture();
+    $theirs = Team::factory()->create();
+
+    actingAs($admin)
+        ->postJson('/api/documents', ['title' => 'Hijacked', 'team_id' => $theirs->id])
+        ->assertForbidden();
+
+    expect(Document::where('title', 'Hijacked')->exists())->toBeFalse();
 });
 
 it('requires a title', function () {
-    ['admin' => $admin] = teamFixture();
+    ['admin' => $admin, 'team' => $team] = teamFixture();
 
     actingAs($admin)
-        ->postJson('/api/documents', ['title' => null])
+        ->postJson('/api/documents', ['title' => null, 'team_id' => $team->id])
         ->assertJsonValidationErrorFor('title');
+});
+
+it('requires a team that exists and is not trashed', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+
+    actingAs($admin)
+        ->postJson('/api/documents', ['title' => 'No team'])
+        ->assertJsonValidationErrorFor('team_id');
+
+    $team->delete();
+
+    actingAs($admin)
+        ->postJson('/api/documents', ['title' => 'Trashed team', 'team_id' => $team->id])
+        ->assertJsonValidationErrorFor('team_id');
 });
 
 // ---------------------------------------------------------------- visibility
@@ -117,36 +146,98 @@ it('refuses to show another teams document', function () {
 // ---------------------------------------------------------------- update and delete
 
 it('lets an admin edit a document in their own team', function () {
-    ['admin' => $admin, 'document' => $document] = teamFixture();
+    ['admin' => $admin, 'team' => $team, 'document' => $document] = teamFixture();
+
+    actingAs($admin)
+        ->patchJson("/api/documents/{$document->id}", [
+            'title' => 'Renamed',
+            'team_id' => $team->id,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Renamed')
+        ->assertJsonPath('data.team.id', $team->id);
+});
+
+// The edit dialog offers the same picker the create one does, so the team is a
+// real edit — but moving a document between teams changes who can see it, which
+// is why only a super-admin may do so.
+it('lets a super admin move a document to another team', function () {
+    ['document' => $document] = teamFixture();
+    $destination = Team::factory()->create();
+
+    actingAs(superAdmin())
+        ->patchJson("/api/documents/{$document->id}", [
+            'title' => $document->title,
+            'team_id' => $destination->id,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.team.id', $destination->id);
+
+    expect($document->refresh()->team_id)->toBe($destination->id);
+});
+
+it('refuses to let an admin move a document out of their own team', function () {
+    ['admin' => $admin, 'team' => $team, 'document' => $document] = teamFixture();
+    $elsewhere = Team::factory()->create();
+
+    actingAs($admin)
+        ->patchJson("/api/documents/{$document->id}", [
+            'title' => $document->title,
+            'team_id' => $elsewhere->id,
+        ])
+        ->assertForbidden();
+
+    expect($document->refresh()->team_id)->toBe($team->id);
+});
+
+it('requires a live team on update too', function () {
+    ['admin' => $admin, 'team' => $team, 'document' => $document] = teamFixture();
 
     actingAs($admin)
         ->patchJson("/api/documents/{$document->id}", ['title' => 'Renamed'])
-        ->assertOk()
-        ->assertJsonPath('data.title', 'Renamed');
+        ->assertJsonValidationErrorFor('team_id');
+
+    $team->delete();
+
+    actingAs(superAdmin())
+        ->patchJson("/api/documents/{$document->id}", [
+            'title' => 'Renamed',
+            'team_id' => $team->id,
+        ])
+        ->assertJsonValidationErrorFor('team_id');
 });
 
+// The payloads below are deliberately valid: a FormRequest validates before the
+// controller's Gate::authorize runs, so an incomplete body would 422 without
+// ever reaching the authorization these assert.
 it('refuses to let a member edit or delete a document', function () {
-    ['member' => $member, 'document' => $document] = teamFixture();
+    ['member' => $member, 'team' => $team, 'document' => $document] = teamFixture();
 
     actingAs($member)
-        ->patchJson("/api/documents/{$document->id}", ['title' => 'Renamed'])
+        ->patchJson("/api/documents/{$document->id}", [
+            'title' => 'Renamed',
+            'team_id' => $team->id,
+        ])
         ->assertForbidden();
 
     actingAs($member)->deleteJson("/api/documents/{$document->id}")->assertForbidden();
 });
 
 it('refuses to let an admin touch another teams document', function () {
-    ['admin' => $admin] = teamFixture();
+    ['admin' => $admin, 'team' => $team] = teamFixture();
     $theirs = Document::factory()->for(User::factory())->create([
         'team_id' => Team::factory()->create()->id,
     ]);
 
     actingAs($admin)
-        ->patchJson("/api/documents/{$theirs->id}", ['title' => 'Hijacked'])
+        ->patchJson("/api/documents/{$theirs->id}", [
+            'title' => 'Hijacked',
+            'team_id' => $team->id,
+        ])
         ->assertForbidden();
 });
 
-it('soft deletes a document and cascades to its images', function () {
+it('soft deletes a document and takes its images down with it', function () {
     ['admin' => $admin, 'document' => $document] = teamFixture();
     $image = Image::factory()->for($admin)->for($document)->create();
 
@@ -154,9 +245,93 @@ it('soft deletes a document and cascades to its images', function () {
 
     expect(Document::find($document->id))->toBeNull();
     expect(Document::withTrashed()->find($document->id))->not->toBeNull();
-    // The document is only soft-deleted, so the FK has nothing to cascade yet —
-    // the image row survives but is no longer reachable through a live document.
+
+    // The FK's ON DELETE CASCADE cannot fire on an UPDATE, so this is
+    // Document::booted() rather than the database.
+    expect(Image::find($image->id))->toBeNull();
+
+    // Stamped identically, which is the key restore() files them under.
+    $trashedImage = Image::withTrashed()->find($image->id);
+    expect($trashedImage->deleted_at->eq(
+        Document::withTrashed()->find($document->id)->deleted_at
+    ))->toBeTrue();
+});
+
+it('restores the images it took down when the document is restored', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+    $image = Image::factory()->for($admin)->for($document)->create();
+
+    actingAs($admin)->deleteJson("/api/documents/{$document->id}")->assertNoContent();
+    actingAs($admin)->postJson("/api/documents/{$document->id}/restore")->assertOk();
+
     expect(Image::find($image->id))->not->toBeNull();
+});
+
+//TODO: sepeare trashing is to be removed
+
+// The reason the cascade matches on deleted_at rather than restoring every
+// trashed image: an image binned on its own was not the document's doing, so
+// bringing the document back must not bring it back too.
+it('leaves an individually trashed image trashed when the document returns', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+    $binnedAlone = Image::factory()->for($admin)->for($document)->create();
+    $wentWithDocument = Image::factory()->for($admin)->for($document)->create();
+
+    actingAs($admin)->deleteJson("/api/images/{$binnedAlone->id}")->assertNoContent();
+    actingAs($admin)->deleteJson("/api/documents/{$document->id}")->assertNoContent();
+    actingAs($admin)->postJson("/api/documents/{$document->id}/restore")->assertOk();
+
+    expect(Image::find($wentWithDocument->id))->not->toBeNull();
+    expect(Image::find($binnedAlone->id))->toBeNull();
+});
+
+// The flag has to be cleared on an individual restore or it goes stale: this
+// image is deliberately binned after being brought back, so the document's
+// restore must not revive it a second time.
+it('does not revive an image binned again after being restored on its own', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+    $image = Image::factory()->for($admin)->for($document)->create();
+
+    actingAs($admin)->deleteJson("/api/documents/{$document->id}")->assertNoContent();
+    actingAs($admin)->postJson("/api/images/{$image->id}/restore")->assertOk();
+    actingAs($admin)->deleteJson("/api/images/{$image->id}")->assertNoContent();
+    actingAs($admin)->postJson("/api/documents/{$document->id}/restore")->assertOk();
+
+    expect(Image::find($image->id))->toBeNull();
+});
+
+// Image::scopeVisibleTo returns early for a super-admin, so before the cascade
+// these images stayed in the live listing with nothing filtering them out.
+it('keeps the images of a trashed document out of the live image listing', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+    $image = Image::factory()->for($admin)->for($document)->create();
+
+    actingAs($admin)->deleteJson("/api/documents/{$document->id}")->assertNoContent();
+
+    actingAs(superAdmin())
+        ->getJson('/api/images')
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+
+    actingAs(superAdmin())
+        ->getJson('/api/images?trashed=only')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $image->id);
+});
+
+// The other half of the branch in Document::booted(): a hard delete is left to
+// the FK, which removes live and already-trashed rows alike.
+it('lets the database cascade the image rows on a force delete', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+    $live = Image::factory()->for($admin)->for($document)->create();
+    $alreadyTrashed = Image::factory()->for($admin)->for($document)->create();
+    $alreadyTrashed->delete();
+
+    $document->forceDelete();
+
+    expect(Image::withTrashed()->find($live->id))->toBeNull();
+    expect(Image::withTrashed()->find($alreadyTrashed->id))->toBeNull();
 });
 
 // ---------------------------------------------------------------- cover images
@@ -166,13 +341,13 @@ it('soft deletes a document and cascades to its images', function () {
 it('returns only the four most recent images, with the true total alongside', function () {
     ['admin' => $admin, 'document' => $document] = teamFixture();
 
-    $images = collect(range(1, 6))->map(fn (int $i) => Image::factory()
+    $images = collect(range(1, 6))->map(fn(int $i) => Image::factory()
         ->for($admin)
         ->for($document)
         ->create(['title' => "Image {$i}", 'created_at' => now()->addMinutes($i)]));
 
     $row = actingAs($admin)
-        ->getJson('/api/documents')
+        ->getJson('/api/documents?cover=1')
         ->assertOk()
         ->json('data.0');
 
@@ -186,10 +361,23 @@ it('returns only the four most recent images, with the true total alongside', fu
 it('reports a zero count for a document with no images', function () {
     ['admin' => $admin] = teamFixture();
 
-    $row = actingAs($admin)->getJson('/api/documents')->assertOk()->json('data.0');
+    $row = actingAs($admin)->getJson('/api/documents?cover=1')->assertOk()->json('data.0');
 
     expect($row['images'])->toBe([]);
     expect($row['images_count'])->toBe(0);
+});
+
+// The admin table draws no thumbnails; it asks /api/images?document_id= when a
+// row is expanded. Serialising four images, their media and their categories per
+// row for that table would be pure waste, so the key is absent without cover=1.
+it('omits the cover images unless they are asked for', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+    Image::factory()->for($admin)->for($document)->create();
+
+    $row = actingAs($admin)->getJson('/api/documents')->assertOk()->json('data.0');
+
+    expect($row)->not->toHaveKey('images');
+    expect($row['images_count'])->toBe(1);
 });
 
 // ---------------------------------------------------------------- payload shape
@@ -202,7 +390,7 @@ it('returns creator and nested images on every row of a multi document listing',
     }
 
     $rows = actingAs($admin)
-        ->getJson('/api/documents')
+        ->getJson('/api/documents?cover=1')
         ->assertOk()
         // 3 created here plus the fixture's own, which has no images.
         ->assertJsonCount(4, 'data')
@@ -210,4 +398,115 @@ it('returns creator and nested images on every row of a multi document listing',
 
     expect($rows)->each->toHaveKeys(['creator', 'images']);
     expect(array_column($rows, 'creator'))->toBe(array_fill(0, 4, $admin->name));
+});
+
+// The admin table renders both, and neither used to be in the resource.
+it('returns the team and both timestamps on a listing row', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+
+    $row = actingAs($admin)->getJson('/api/documents')->assertOk()->json('data.0');
+
+    expect($row['team'])->toBe(['id' => $team->id, 'name' => $team->name]);
+    expect($row)->toHaveKeys(['created_at', 'updated_at', 'deleted_at']);
+    expect($row['deleted_at'])->toBeNull();
+});
+
+// ---------------------------------------------------------------- paging, sorting, search
+
+it('pages the listing and reports the true total', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+    Document::factory()->count(9)->for($admin)->create(['team_id' => $team->id]);
+
+    $response = actingAs($admin)
+        ->getJson('/api/documents?page=2&per_page=4')
+        ->assertOk()
+        ->assertJsonCount(4, 'data');
+
+    // 9 created here plus the fixture's own.
+    expect($response->json('meta.total'))->toBe(10);
+    expect($response->json('meta.current_page'))->toBe(2);
+});
+
+it('sorts by creator, which is not a column', function () {
+    ['team' => $team] = teamFixture();
+    $zoe = User::factory()->create(['name' => 'Zoe']);
+    $abe = User::factory()->create(['name' => 'Abe']);
+    Document::factory()->for($zoe)->create(['team_id' => $team->id, 'title' => 'Z doc']);
+    Document::factory()->for($abe)->create(['team_id' => $team->id, 'title' => 'A doc']);
+
+    $creators = actingAs(superAdmin())
+        ->getJson('/api/documents?sort_by=creator&sort_order=asc')
+        ->assertOk()
+        ->json('data.*.creator');
+
+    expect($creators[0])->toBe('Abe');
+    expect(array_slice($creators, -1)[0])->toBe('Zoe');
+});
+
+// Whitelisted against DocumentController::SORTABLE, so an unknown column is a
+// 422 rather than an injectable orderBy.
+it('refuses to sort by an unlisted column', function () {
+    ['admin' => $admin] = teamFixture();
+
+    actingAs($admin)
+        ->getJson('/api/documents?sort_by=team_id')
+        ->assertJsonValidationErrorFor('sort_by');
+});
+
+it('searches title, description and creator', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+    Document::factory()->for($admin)->create(['team_id' => $team->id, 'title' => 'Findable']);
+
+    actingAs($admin)
+        ->getJson('/api/documents?search=Findable')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.title', 'Findable');
+});
+
+// ---------------------------------------------------------------- restore
+
+it('restores a soft deleted document', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+    $document->delete();
+
+    actingAs($admin)
+        ->postJson("/api/documents/{$document->id}/restore")
+        ->assertOk()
+        ->assertJsonPath('data.id', $document->id)
+        ->assertJsonPath('data.deleted_at', null);
+
+    expect(Document::find($document->id))->not->toBeNull();
+});
+
+it('refuses to restore a document that is not trashed', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+
+    actingAs($admin)->postJson("/api/documents/{$document->id}/restore")->assertNotFound();
+});
+
+it('refuses to let a member restore a document', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+    $document->delete();
+
+    actingAs($member)->postJson("/api/documents/{$document->id}/restore")->assertForbidden();
+});
+
+// ---------------------------------------------------------------- trashed listing
+
+it('serves the trashed side of the listing only when asked', function () {
+    ['admin' => $admin, 'team' => $team, 'document' => $document] = teamFixture();
+    Document::factory()->for($admin)->create(['team_id' => $team->id]);
+    $document->delete();
+
+    actingAs($admin)->getJson('/api/documents')->assertOk()->assertJsonCount(1, 'data');
+    actingAs($admin)->getJson('/api/documents?trashed=only')->assertOk()->assertJsonCount(1, 'data');
+    actingAs($admin)->getJson('/api/documents?trashed=with')->assertOk()->assertJsonCount(2, 'data');
+});
+
+// Told no, rather than handed a quietly narrower list.
+it('refuses the trashed flag to a member', function () {
+    ['member' => $member] = teamFixture();
+
+    actingAs($member)->getJson('/api/documents?trashed=only')->assertForbidden();
 });

@@ -38,6 +38,8 @@ it('creates a category and reports the authenticated user as its creator', funct
     ]);
 });
 
+
+ // TODO: 3 fields ?
 it('rejects a category whose name is already taken', function (string $field, string $value) {
     $user = User::factory()->create();
     Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
@@ -134,8 +136,8 @@ it('lets a category keep its own name while updating', function () {
 
 it('rejects renaming onto another category, trashed or not', function (bool $trashed) {
     $user = User::factory()->create();
-    $other = Category::factory()->create(['name_en' => 'Taken', 'name_ar' => 'محجوز']);
     $category = Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
+    $other = Category::factory()->create(['name_en' => 'Taken', 'name_ar' => 'محجوز']);
 
     if ($trashed) {
         $other->delete();
