@@ -19,9 +19,14 @@ beforeEach(function () {
 
 /**
  * The admin images screen lists live and trashed rows in one request and puts
- * the trashed ones in a second table, the way the teams screen does. That rests
- * on two things being true: `with_trashed` widens the list only for people
- * allowed to see a trash, and it never widens it past the caller's team.
+ * the trashed ones in a second table, the way the teams screen does; the
+ * document page's "Recently deleted" chip asks the same endpoint for
+ * `trashed=only`.
+ *
+ * That rests on three things being true: `trashed` widens the list for
+ * *everyone* signed in, it never widens it past the caller's team, and what it
+ * widens to depends on who is asking - a member reaches their own deleted
+ * images, an admin the whole team's. The flag is scoped, not refused.
  */
 
 // ------------------------------------------------------------ listing
@@ -58,14 +63,91 @@ it('includes soft-deleted images for an admin who asks for them', function () {
     expect($rows[$trashed->id]['deleted_at'])->not->toBeNull();
 });
 
-// The flag is authorised, not quietly dropped: a member handed a shorter list
-// could not tell it apart from an empty trash.
-it('refuses the trashed listing to a plain member', function () {
-    ['member' => $member] = teamFixture();
+// Was a 403. A member now has a trash of their own - they can delete their own
+// images, so they must be able to find them again.
+it('serves a member their own trashed images', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+
+    $trashed = Image::factory()->for($member)->for($document)->create();
+    $trashed->delete();
 
     actingAs($member)
-        ->getJson('/api/images?trashed=with')
-        ->assertForbidden();
+        ->getJson('/api/images?trashed=only')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $trashed->id);
+});
+
+// The narrowing is the whole point: a member's trash is theirs, not the team's.
+it('hides a teammates trashed image from a member', function () {
+    ['member' => $member, 'other' => $other, 'document' => $document] = teamFixture();
+
+    $mine = Image::factory()->for($member)->for($document)->create();
+    $mine->delete();
+
+    $theirs = Image::factory()->for($other)->for($document)->create();
+    $theirs->delete();
+
+    actingAs($member)
+        ->getJson('/api/images?trashed=only')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $mine->id);
+});
+
+// An admin is not narrowed: the team's trash is theirs to manage.
+it('serves an admin the whole teams trash', function () {
+    ['admin' => $admin, 'member' => $member, 'other' => $other, 'document' => $document] = teamFixture();
+
+    foreach ([$member, $other] as $owner) {
+        Image::factory()->for($owner)->for($document)->create()->delete();
+    }
+
+    actingAs($admin)
+        ->getJson('/api/images?trashed=only')
+        ->assertOk()
+        ->assertJsonCount(2, 'data');
+});
+
+// The chips are separate buckets: All and Yours are live-only, and no amount of
+// deleted rows may leak into a listing that did not ask for them.
+it('keeps deleted images out of a listing that does not ask for them', function () {
+    ['admin' => $admin, 'member' => $member, 'document' => $document] = teamFixture();
+
+    Image::factory()->for($member)->for($document)->create()->delete();
+    $live = Image::factory()->for($member)->for($document)->create();
+
+    foreach ([$member, $admin] as $caller) {
+        actingAs($caller)
+            ->getJson("/api/images?document_id={$document->id}")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $live->id);
+    }
+
+    actingAs($member)
+        ->getJson("/api/images?document_id={$document->id}&owner=mine")
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $live->id);
+});
+
+// Restore follows the same rule as delete - ImagePolicy::restore delegates to
+// ::update - so a member may put back what they binned, and nothing else.
+it('lets a member restore their own image but not a teammates', function () {
+    ['member' => $member, 'other' => $other, 'document' => $document] = teamFixture();
+
+    $mine = Image::factory()->for($member)->for($document)->create();
+    $mine->delete();
+
+    $theirs = Image::factory()->for($other)->for($document)->create();
+    $theirs->delete();
+
+    actingAs($member)->postJson("/api/images/{$mine->id}/restore")->assertOk();
+    actingAs($member)->postJson("/api/images/{$theirs->id}/restore")->assertForbidden();
+
+    expect($mine->refresh()->trashed())->toBeFalse();
+    expect($theirs->refresh()->trashed())->toBeTrue();
 });
 
 it('still serves the plain listing to a member', function () {
@@ -127,12 +209,17 @@ it('serves only trashed rows for trashed=only', function () {
         ->assertJsonPath('data.0.id', $trashed->id);
 });
 
-it('refuses trashed=only to a plain member', function () {
-    ['member' => $member] = teamFixture();
+// Also once a 403. A member's trashed=only is served but empty until they have
+// deleted something of their own - scoped, not refused.
+it('serves an empty trash to a member with nothing deleted', function () {
+    ['member' => $member, 'admin' => $admin, 'document' => $document] = teamFixture();
+
+    Image::factory()->for($admin)->for($document)->create()->delete();
 
     actingAs($member)
         ->getJson('/api/images?trashed=only')
-        ->assertForbidden();
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
 });
 
 it('rejects a trashed mode outside the enum', function () {

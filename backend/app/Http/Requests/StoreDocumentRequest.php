@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\DocumentValidationRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -21,12 +22,13 @@ class StoreDocumentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title' => [
-                'required',
-                'string',
-                'max:140',
-                Rule::unique('documents', 'title')->where('user_id', $this->user()->id)->withoutTrashed(),
-            ],
+            // Scoped to the destination team, which the sibling rule below
+            // validates. A forged or missing id reaches this as null and takes
+            // the per-owner fallback - the request still fails on team_id.
+            'title' => DocumentValidationRules::title(
+                $this->integer('team_id') ?: null,
+                $this->user()->id,
+            ),
             'description' => ['nullable', 'string', 'max:400'],
             // Chosen in the create dialog rather than derived from the session,
             // so a super-admin - who belongs to no team - can still file a
@@ -39,5 +41,13 @@ class StoreDocumentRequest extends FormRequest
                 Rule::exists('teams', 'id')->whereNull('deleted_at'),
             ],
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return DocumentValidationRules::messages();
     }
 }

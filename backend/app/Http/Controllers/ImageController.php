@@ -76,6 +76,15 @@ class ImageController extends Controller
                 $request->filled('document_id'),
                 fn ($builder) => $builder->where('document_id', $request->integer('document_id')),
             )
+            // A member's trash holds their own images; an admin's holds the
+            // team's. Narrowed rather than refused, the way scopeVisibleTo
+            // narrows rather than denying - a member has a trash, it is just
+            // smaller. Gate::allows() rather than a role check so Gate::before
+            // still lets a super-admin see everything.
+            ->when(
+                $trashed !== null && ! Gate::allows('viewAllTrashed', Image::class),
+                fn ($builder) => $builder->where('user_id', $request->user()->id),
+            )
             // Same rule as document_id: a filter, applied after the scope, so
             // it only ever narrows. `users.id` is the owner column's target and
             // images.user_id is NOT NULL, so this is a plain equality with no
@@ -113,6 +122,14 @@ class ImageController extends Controller
             ),
             fn ($builder) => $builder->orderBy($sortBy, $direction),
         );
+
+        // A stable tie-break, and not optional once the feed can be sorted by a
+        // non-unique column. created_at is not unique - images inserted in one
+        // batch share it to the second - and LIMIT/OFFSET paging over a
+        // non-unique key lets the database order ties differently per page, so
+        // page 2 can repeat a row from page 1 or skip one. The document page's
+        // infinite scroll would show duplicates; the admin tables would too.
+        $query->orderBy('id');
 
         // Absent means *everything*, unlike IndexUserRequest's caller, which
         // always pages. This endpoint has a second caller - the gallery, which

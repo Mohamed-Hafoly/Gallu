@@ -61,12 +61,30 @@ class ImagePolicy
     /**
      * Whether the images listing may include soft-deleted rows.
      *
-     * Not tied to an instance, because it gates the *query* — there is no image
-     * to check until the rows come back. Team admins get their own team's trash
-     * (scopeVisibleTo still narrows it); Gate::before has already let
-     * super-admins through, so this only decides the admin/member split.
+     * True for everyone signed in, like viewAny above and for the same reason:
+     * everybody has a trash, and *whose* rows are in it is a scoping question
+     * rather than an authorisation one. ImageController::index narrows it —
+     * see viewAllTrashed.
+     *
+     * Not tied to an instance, because it gates the *query*: there is no image
+     * to check until the rows come back.
      */
     public function viewTrashed(User $user): bool
+    {
+        return true;
+    }
+
+    /**
+     * Whether that trash is the whole team's, or only the caller's own images.
+     *
+     * A member may reach their own deleted images but not a teammate's; an
+     * admin gets the team's (scopeVisibleTo still bounds it to that team).
+     *
+     * Lives here rather than as an inline is_super_admin check in the
+     * controller precisely so Gate::before applies: a super-admin is not an
+     * Admin by role(), and would fail the comparison below.
+     */
+    public function viewAllTrashed(User $user): bool
     {
         return $user->role() === RoleName::Admin;
     }

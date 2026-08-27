@@ -93,3 +93,35 @@ it('pages the listing and reports an honest total', function () {
         ->assertOk()
         ->assertJsonCount(5, 'data');
 });
+
+// ------------------------------------------------------------ stable paging
+
+/**
+ * Paging over a non-unique sort key is only safe with a tie-break: the database
+ * may order ties differently per page, so without one page 2 can repeat a row
+ * from page 1. The gallery's sort control makes created_at reachable, and
+ * images created in one batch share it.
+ */
+it('does not repeat a row across pages when the sort key ties', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+
+    $sharedTimestamp = now()->subDay();
+
+    Image::factory()->count(6)->for($member)->for($document)->create([
+        'created_at' => $sharedTimestamp,
+    ]);
+
+    $seen = [];
+
+    foreach ([1, 2, 3] as $page) {
+        $response = actingAs($member)
+            ->getJson("/api/images?document_id={$document->id}&sort_by=created_at&sort_order=desc&per_page=2&page={$page}")
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        $seen = [...$seen, ...collect($response->json('data'))->pluck('id')->all()];
+    }
+
+    expect($seen)->toHaveCount(6);
+    expect(array_unique($seen))->toHaveCount(6);
+});

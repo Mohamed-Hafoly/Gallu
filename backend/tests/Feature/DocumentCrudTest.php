@@ -4,6 +4,7 @@ use App\Models\Document;
 use App\Models\Image;
 use App\Models\Team;
 use App\Models\User;
+use App\Rules\DocumentValidationRules;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 use function Pest\Laravel\actingAs;
@@ -267,7 +268,7 @@ it('restores the images it took down when the document is restored', function ()
     expect(Image::find($image->id))->not->toBeNull();
 });
 
-//TODO: sepeare trashing is to be removed
+// TODO: sepeare trashing is to be removed
 
 // The reason the cascade matches on deleted_at rather than restoring every
 // trashed image: an image binned on its own was not the document's doing, so
@@ -341,7 +342,7 @@ it('lets the database cascade the image rows on a force delete', function () {
 it('returns only the four most recent images, with the true total alongside', function () {
     ['admin' => $admin, 'document' => $document] = teamFixture();
 
-    $images = collect(range(1, 6))->map(fn(int $i) => Image::factory()
+    $images = collect(range(1, 6))->map(fn (int $i) => Image::factory()
         ->for($admin)
         ->for($document)
         ->create(['title' => "Image {$i}", 'created_at' => now()->addMinutes($i)]));
@@ -509,4 +510,111 @@ it('refuses the trashed flag to a member', function () {
     ['member' => $member] = teamFixture();
 
     actingAs($member)->getJson('/api/documents?trashed=only')->assertForbidden();
+});
+
+// ---------------------------------------------------------------- titles
+
+// The hole the per-owner scope left open: a title is how a document is told
+// apart from its siblings on the team's list, so a teammate must not reuse one.
+it('rejects a duplicate title from a different user in the same team', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+    Document::factory()->for($admin)->create(['title' => 'Q3 Report', 'team_id' => $team->id]);
+
+    actingAs($admin)
+        ->postJson('/api/documents', ['title' => 'Q3 Report', 'team_id' => $team->id])
+        ->assertJsonValidationErrorFor('title');
+
+    expect(Document::where('title', 'Q3 Report')->count())->toBe(1);
+});
+
+// And the behaviour bought in exchange: the same title under another team is
+// not a collision at all.
+it('allows the same title in a different team', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+    Document::factory()->for($admin)->create(['title' => 'Q3 Report', 'team_id' => $team->id]);
+
+    actingAs(superAdmin())
+        ->postJson('/api/documents', [
+            'title' => 'Q3 Report',
+            'team_id' => Team::factory()->create()->id,
+        ])
+        ->assertCreated();
+
+    expect(Document::where('title', 'Q3 Report')->count())->toBe(2);
+});
+
+it('allows a document to keep its own unchanged title', function () {
+    ['admin' => $admin, 'team' => $team, 'document' => $document] = teamFixture();
+
+    actingAs($admin)
+        ->patchJson("/api/documents/{$document->id}", [
+            'title' => $document->title,
+            'team_id' => $team->id,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.title', $document->title);
+});
+
+// The scope follows the *incoming* team, not the stored one. Scoping to where
+// the document currently sits would let this move slide through and leave the
+// destination holding two documents with one title.
+it('refuses to move a document into a team that already holds its title', function () {
+    ['document' => $document] = teamFixture();
+    $destination = Team::factory()->create();
+    Document::factory()->for(User::factory())->create([
+        'title' => $document->title,
+        'team_id' => $destination->id,
+    ]);
+
+    actingAs(superAdmin())
+        ->patchJson("/api/documents/{$document->id}", [
+            'title' => $document->title,
+            'team_id' => $destination->id,
+        ])
+        ->assertJsonValidationErrorFor('title');
+
+    expect($document->refresh()->team_id)->not->toBe($destination->id);
+});
+
+// The stock unique message would say only "already been taken", which reads as
+// a lie now that another team may hold that very title.
+it('names the team in the duplicate title message', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+    Document::factory()->for($admin)->create(['title' => 'Q3 Report', 'team_id' => $team->id]);
+
+    actingAs($admin)
+        ->postJson('/api/documents', ['title' => 'Q3 Report', 'team_id' => $team->id])
+        ->assertJsonPath('errors.title.0', __('document.duplicateTitle'));
+});
+
+/**
+ * The team-less branch has no route that can reach it - team_id is required on
+ * both requests and must name a live team - so it is exercised through the rule
+ * itself rather than an HTTP call that would only pretend to cover it.
+ */
+it('falls back to a per-owner scope when a document has no team', function () {
+    $owner = User::factory()->create();
+    Document::factory()->for($owner)->create(['title' => 'Orphan', 'team_id' => null]);
+
+    $rules = ['title' => DocumentValidationRules::title(null, $owner->id)];
+
+    expect(validator(['title' => 'Orphan'], $rules)->fails())->toBeTrue();
+    expect(validator(['title' => 'Different'], $rules)->fails())->toBeFalse();
+
+    // Another owner's team-less document is not the same row, so it does not
+    // collide - which is what "falls back to per-owner" has to mean.
+    $rules = ['title' => DocumentValidationRules::title(null, User::factory()->create()->id)];
+
+    expect(validator(['title' => 'Orphan'], $rules)->fails())->toBeFalse();
+});
+
+// A team-less document must not block the title inside a team either: the two
+// scopes are separate pools, not one with a hole in it.
+it('does not let a team less document block a title inside a team', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+    Document::factory()->for($admin)->create(['title' => 'Orphan', 'team_id' => null]);
+
+    actingAs($admin)
+        ->postJson('/api/documents', ['title' => 'Orphan', 'team_id' => $team->id])
+        ->assertCreated();
 });

@@ -63,15 +63,15 @@ class DocumentController extends Controller
     private static function with(): array
     {
         return [
-            'images' => fn($query) => $query->latest()->limit(self::COVER_IMAGES),
-            'images.media' => fn($query) => $query,
-            'images.categories' => fn($query) => $query,
-            'images.user' => fn($query) => $query,
-            'user' => fn($query) => $query,
+            'images' => fn ($query) => $query->latest()->limit(self::COVER_IMAGES),
+            'images.media' => fn ($query) => $query,
+            'images.categories' => fn ($query) => $query,
+            'images.user' => fn ($query) => $query,
+            'user' => fn ($query) => $query,
             // So show(), store() and update() report `team` too. Without it the
             // resource's whenLoaded() drops the key, and a created document
             // would come back describing every field except the one just picked.
-            'team' => fn($query) => $query,
+            'team' => fn ($query) => $query,
         ];
     }
 
@@ -114,24 +114,25 @@ class DocumentController extends Controller
             // Widens which rows survive the soft-delete scope, never which team
             // they belong to - visibleTo() has already narrowed that, and this
             // runs after it.
-            ->when($trashed === 'with', fn($builder) => $builder->withTrashed())
-            ->when($trashed === 'only', fn($builder) => $builder->onlyTrashed())
+            ->when($trashed === 'with', fn ($builder) => $builder->withTrashed())
+            ->when($trashed === 'only', fn ($builder) => $builder->onlyTrashed())
             // Grouped, so the ORs cannot escape the scope above and turn a
             // search into a cross-team read.
-            ->when($search !== '', fn($builder) => $builder->where(
-                fn($grouped) => $grouped
+            ->when($search !== '', fn ($builder) => $builder->where(
+                fn ($grouped) => $grouped
                     ->where('title', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('user', fn($user) => $user->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('user', fn ($user) => $user->where('name', 'like', "%{$search}%"))
             ))
             // `team` is rendered by the admin table and `images_count` by both
             // callers, so these are never conditional.
             ->with(['user', 'team'])
             ->withCount('images')
             // Only the gallery's card grid wants the cover thumbnails; the admin
-            // table fetches a document's images on expand instead. See
-            // IndexDocumentRequest for why this is a parameter.
-            ->when($request->boolean('cover'), fn($builder) => $builder->with(self::with()));
+            // table shows a count and links to the document page, which fetches
+            // its own images. See IndexDocumentRequest for why this is a
+            // parameter.
+            ->when($request->boolean('cover'), fn ($builder) => $builder->with(self::with()));
 
         // `creator` is the API's name for the owner's name, which lives on
         // `users`. A correlated subselect rather than a join, so the sort cannot
@@ -139,11 +140,11 @@ class DocumentController extends Controller
         // ImageController::index and User::scopeWithTeamAssignment() use.
         $query->when(
             $sortBy === self::CREATOR_SORT,
-            fn($builder) => $builder->orderBy(
+            fn ($builder) => $builder->orderBy(
                 User::select('name')->whereColumn('users.id', 'documents.user_id'),
                 $direction,
             ),
-            fn($builder) => $builder->orderBy($sortBy, $direction),
+            fn ($builder) => $builder->orderBy($sortBy, $direction),
         );
 
         // Absent means *everything*, as in ImageController::index and unlike

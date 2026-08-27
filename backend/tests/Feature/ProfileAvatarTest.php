@@ -37,6 +37,7 @@ it('falls back to the default avatar for a user who has not uploaded one', funct
         ->assertJsonPath('data.avatar_thumb_url', asset(User::DEFAULT_AVATAR_PATH));
 });
 
+// TODO not tobe?
 it('uploads an avatar with the profile form', function () {
     $user = User::factory()->create();
 
