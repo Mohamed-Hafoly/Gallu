@@ -94,17 +94,8 @@
       "bulkRestored": "Selected documents restored ({count})",
       "bulkRestoreFailed": "Some documents could not be restored ({count})",
       "view": "Open document",
-      "noImages": "This document has no images yet",
-      "imagesLoadFailed": "Could not load this document's images.",
-      "imagesTitle": "Images in this document",
       "deleteSelected": "Delete selected ({count})",
-      "images": {
-        "thumb": "Preview",
-        "id": "ID",
-        "title": "Title",
-        "creator": "Uploaded by",
-        "createdAt": "Uploaded"
-      }
+      "imageCount": "Images"
     },
     "images": {
       "title": "Images",
@@ -245,7 +236,9 @@
     "imageRequired": "Select an image",
     "chooseImage": "Choose an image",
     "changeImage": "Change Image",
-    "saved": "Changes saved"
+    "saved": "Changes saved",
+    "lastUpdated": "last updated {time}",
+    "deletedAgo": "deleted {time}"
   },
   "documents": {
     "title": "Documents",
@@ -255,7 +248,18 @@
     "forbidden": "You do not have access to this document.",
     "allImages": "All",
     "yourImages": "Yours",
-    "noImagesYours": "You haven't uploaded anything here yet."
+    "noImagesYours": "You haven't uploaded anything here yet.",
+    "create": "Create document",
+    "edit": "Edit document",
+    "created": "Document created",
+    "updated": "Document updated",
+    "delete": "Delete document",
+    "trashedImages": "Recently deleted",
+    "restore": "Restore image",
+    "restored": "Image restored",
+    "searchImages": "Search images by title, description or creator",
+    "sortBy": "Sort by",
+    "sortDirection": "Sort direction"
   },
   "profile": {
     "title": "Profile Information",

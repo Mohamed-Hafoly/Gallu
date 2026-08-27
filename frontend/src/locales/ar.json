@@ -94,17 +94,8 @@
       "bulkRestored": "تمت استعادة المستندات المحددة ({count})",
       "bulkRestoreFailed": "تعذّرت استعادة بعض المستندات ({count})",
       "view": "فتح المستند",
-      "noImages": "لا توجد صور في هذا المستند بعد",
-      "imagesLoadFailed": "تعذّر تحميل صور هذا المستند.",
-      "imagesTitle": "صور هذا المستند",
       "deleteSelected": "حذف المحدد ({count})",
-      "images": {
-        "thumb": "معاينة",
-        "id": "المعرف",
-        "title": "العنوان",
-        "creator": "رفعها",
-        "createdAt": "تاريخ الرفع"
-      }
+      "imageCount": "الصور"
     },
     "images": {
       "title": "الصور",
@@ -245,7 +236,9 @@
     "imageRequired": "إختر صورة",
     "chooseImage": "إختر صورة",
     "changeImage": "تغيير الصورة",
-    "saved": "تم حفظ التغييرات"
+    "saved": "تم حفظ التغييرات",
+    "lastUpdated": "آخر تحديث {time}",
+    "deletedAgo": "حُذفت {time}"
   },
   "documents": {
     "title": "المستندات",
@@ -255,7 +248,18 @@
     "forbidden": "ليس لديك صلاحية الوصول إلى هذا المستند.",
     "allImages": "الكل",
     "yourImages": "صورك",
-    "noImagesYours": "لم ترفع أي صورة هنا بعد."
+    "noImagesYours": "لم ترفع أي صورة هنا بعد.",
+    "create": "إنشاء مستند",
+    "edit": "تعديل المستند",
+    "created": "تم إنشاء المستند",
+    "updated": "تم حفظ التغييرات",
+    "delete": "حذف المستند",
+    "trashedImages": "المحذوفة مؤخرًا",
+    "restore": "استعادة الصورة",
+    "restored": "تمت استعادة الصورة",
+    "searchImages": "ابحث في الصور بالعنوان أو الوصف أو المنشئ",
+    "sortBy": "ترتيب حسب",
+    "sortDirection": "اتجاه الترتيب"
   },
   "profile": {
     "title": "معلومات الحساب",

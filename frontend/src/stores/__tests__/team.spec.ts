@@ -70,7 +70,6 @@ describe("createTeam", () => {
     });
   });
 
-  // The column is nullable, so an untouched description is null rather than "".
   it("carries a null description through", async () => {
     mockedApi.post.mockResolvedValue({ data: { data: team } });
 
@@ -210,6 +209,8 @@ describe("createTeam members", () => {
     });
   });
 
+
+  // TODO: duplcate tests?
   // The backend rule is `sometimes`, so an empty pick list must not send the
   // key at all rather than an empty array.
   it("omits the key entirely when nothing was picked", async () => {

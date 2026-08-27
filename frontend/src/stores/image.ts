@@ -73,9 +73,13 @@ export const useImageStore = defineStore("image", () => {
    *
    * `trashed` is what makes the admin screen's two tables two listings rather
    * than one filtered array: the live table sends nothing, the pending-deletion
-   * table sends "only". The gallery must never send it at all, or deleted
-   * images reappear in /gallery and /documents/{id}; the backend 403s a plain
-   * member who tries.
+   * table sends "only". The document page's "Recently deleted" chip sends
+   * "only" too — the trash is a separate bucket, so All and Yours must keep
+   * sending nothing or deleted rows leak into them.
+   *
+   * No longer a 403 for a member: the backend scopes a trashed listing to the
+   * caller's own images rather than refusing it, so everyone has a trash and it
+   * is simply smaller for some. /gallery still never sends it.
    */
   async function fetchImagePage(params: ImageListParams): Promise<ImagePage> {
     const { data } = await api.get("/api/images", { params });

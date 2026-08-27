@@ -1,10 +1,20 @@
 <script setup lang="ts">
+  import type { AxiosError } from "axios";
   import type { VForm } from "vuetify/components";
   import { nextTick, reactive, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
   import { useAuthStore } from "@/stores/auth";
   import { useDocumentStore } from "@/stores/document";
   import { useNotifierStore } from "@/stores/notifier";
+
+  /**
+   * When given, the team field is dropped and this id is submitted instead.
+   * That is the /documents page, where an admin files under their own team and
+   * has no choice to make. Absent - /admin/documents, and a super-admin
+   * creating from /documents - keeps the picker, since a super-admin belongs to
+   * no team and team_id is required server-side.
+   */
+  const props = defineProps<{ lockedTeamId?: number }>();
 
   const emit = defineEmits<{
     created: [];
@@ -20,6 +30,10 @@
   const formRef = ref<VForm | null>(null);
   const formValid = ref<boolean | null>(null);
   const submitting = ref(false);
+  // Server-side only: the title must be unique within the team, which the
+  // browser has no cheap way to know. Cleared as soon as the title is edited,
+  // so the message never outlives the value it was about.
+  const titleError = ref("");
 
   const form = reactive({
     title: "",
@@ -36,6 +50,7 @@
     form.title = "";
     form.description = "";
     form.teamId = null;
+    titleError.value = "";
 
     // After the tick, not before: emptying the fields re-runs their rules, so a
     // reset on the same tick is immediately undone and the next open greets you
@@ -59,13 +74,15 @@
         // space as it is typed. An empty description is omitted, not "".
         title: form.title.trim(),
         description: form.description.trim() || undefined,
-        // Non-null by the time we are here: teamRules blocks submit otherwise.
-        team_id: form.teamId!,
+        // Non-null by the time we are here: either the caller locked a team, or
+        // teamRules blocked submit until one was picked.
+        team_id: props.lockedTeamId ?? form.teamId!,
       });
 
       emit("created");
       close();
-    } catch {
+    } catch (error) {
+      titleError.value = (error as AxiosError).fieldErrors?.title?.[0] ?? "";
       notifier.notify(t("admin.documents.createFailed"), "error");
     } finally {
       submitting.value = false;
@@ -94,6 +111,9 @@
           v-model:description="form.description"
           v-model:team-id="form.teamId"
           v-model:title="form.title"
+          :hide-team="lockedTeamId !== undefined"
+          :title-error="titleError"
+          @update:title="titleError = ''"
         />
       </v-card-text>
 

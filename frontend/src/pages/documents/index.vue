@@ -5,12 +5,16 @@
   import { useRouter } from "vue-router";
   import { useRtl } from "vuetify";
   import { useDateFormat } from "@/composables/useDateFormat";
+  import { useDocumentPermissions } from "@/composables/useDocumentPermissions";
   import { useDocumentStore } from "@/stores/document";
+  import { useNotifierStore } from "@/stores/notifier";
 
   const { t } = useI18n();
   const { isRtl } = useRtl();
   const { formatRelative } = useDateFormat();
+  const { canCreate, canEdit, lockedTeamId } = useDocumentPermissions();
   const documentStore = useDocumentStore();
+  const notifier = useNotifierStore();
   const router = useRouter();
 
   /**
@@ -23,15 +27,44 @@
   const documents = ref<Document[]>([]);
   const loading = ref(true);
 
+  const createOpen = ref(false);
+  // The document being edited is held apart from the dialog's open flag, as on
+  // the admin page: the dialog keeps rendering through its close transition, so
+  // clearing the document with the flag would blank the form on the way out.
+  const editing = ref<Document | null>(null);
+  const editOpen = ref(false);
+
   // Navigates rather than opening a dialog: a document's content is its images,
-  // which need a page of their own. Creating and editing documents come later.
+  // which need a page of their own.
   function open(document: Document) {
     router.push(`/documents/${document.id}`);
   }
 
+  function openEdit(document: Document) {
+    editing.value = document;
+    editOpen.value = true;
+  }
+
+  async function load() {
+    documents.value = await documentStore.fetchDocuments();
+  }
+
+  // Success is announced here, failure inside the dialog — the same split the
+  // admin documents screen uses, so a dialog that stays open on error is the
+  // one reporting why.
+  async function onCreated() {
+    await load();
+    notifier.notify(t("documents.created"));
+  }
+
+  async function onUpdated() {
+    await load();
+    notifier.notify(t("documents.updated"));
+  }
+
   onMounted(async () => {
     try {
-      documents.value = await documentStore.fetchDocuments();
+      await load();
     } finally {
       loading.value = false;
     }
@@ -40,6 +73,23 @@
 
 <template>
   <v-container class="pt-3" fluid>
+    <!--
+      Above the three branches below, not inside one: loading, empty and the
+      grid are mutually exclusive, so a button placed in any of them would
+      vanish in the other two — including the empty state, which is exactly
+      when creating a document matters most.
+    -->
+    <v-btn
+      v-if="canCreate"
+      block
+      class="mb-3"
+      color="tertiary"
+      prepend-icon="mdi-file-plus"
+      @click="createOpen = true"
+    >
+      {{ t("documents.create") }}
+    </v-btn>
+
     <v-progress-linear v-if="loading" indeterminate />
 
     <p v-else-if="documents.length === 0" class="mt-10 text-center opacity-60">
@@ -168,39 +218,80 @@
             </v-chip>
 
             <!--
-              min-h reserves the two lines line-clamp-2 allows, rather than
-              leaving a one-line description 20px shorter than a two-line one.
-              Without it the cards are uniform only *within* a row: h-full
-              matches a card to its tallest sibling, but v-row wraps and each
-              wrapped line sizes independently, so one long description makes
-              its whole row taller than the next. The description is the card's
-              only variable-height element — both cover branches are
-              aspect-ratio 3/2, and .v-card-title/.v-card-subtitle are nowrap —
-              so pinning it makes every card in the grid identical.
+              truncate, so a description is one line whatever its length. That
+              is also what keeps the cards uniform: it is the only
+              variable-height element on the card — both cover branches are
+              aspect-ratio 3/2 and .v-card-title/.v-card-subtitle are nowrap —
+              so fixing it at one line makes every card in the grid identical,
+              with no min-height to reserve.
 
-              2lh, not a pixel value: it stays exactly two lines if the
-              font-size or the locale changes the line box. min-h rather than h
-              for the same reason — a floor pads, a fixed height would clip.
+              Not line-clamp-2: Chrome 148 clips that without painting an
+              ellipsis, and no standard multi-line alternative is supported
+              there. text-overflow does paint one, but only on a single line.
             -->
             <p
-              class="mt-4 line-clamp-2 min-h-[2lh]"
+              class="mt-4 truncate"
               :class="isRtl ? 'text-right' : 'text-left'"
               dir="auto"
             >
               {{ doc.description || t("gallery.noDescription") }}
             </p>
 
-            <!-- No dir="auto": Intl renders this in the active locale already. -->
-            <p
-              class="mt-auto pt-4 text-sm opacity-70"
-              :class="isRtl ? 'text-right' : 'text-left'"
+            <!--
+              The edit button shares the created-at row rather than taking a
+              v-card-actions of its own: an extra block would add height, and
+              the cards are deliberately identical (see the min-h note above).
+              It is present on every card or none — the permission is per user,
+              and the listing is already team-scoped — so the rows stay even.
+            -->
+            <div
+              class="mt-auto pt-4 flex items-center justify-between gap-2"
             >
-              {{ formatRelative(doc.created_at) }}
-            </p>
+              <!-- No dir="auto": Intl renders this in the active locale already. -->
+              <p
+                class="text-sm opacity-70"
+                :class="isRtl ? 'text-right' : 'text-left'"
+              >
+                {{ formatRelative(doc.created_at) }}
+              </p>
+
+              <!--
+                .stop is load-bearing: the whole card carries @click="open(doc)",
+                so without it editing would also navigate into the document.
+              -->
+              <v-btn
+                v-if="canEdit(doc)"
+                color="tertiary"
+                density="comfortable"
+                icon="mdi-pencil"
+                size="small"
+                :title="t('documents.edit')"
+                variant="text"
+                @click.stop="openEdit(doc)"
+              />
+            </div>
           </v-card-text>
         </v-card>
       </v-col>
     </v-row>
+
+    <DocumentCreateDialog
+      v-model="createOpen"
+      :locked-team-id="lockedTeamId"
+      @created="onCreated"
+    />
+
+    <!--
+      v-if for the non-null `document` prop; `editOpen` is the separate flag
+      that keeps the content through the close transition.
+    -->
+    <DocumentEditDialog
+      v-if="editing"
+      v-model="editOpen"
+      :document="editing"
+      :locked-team-id="editing.team?.id"
+      @updated="onUpdated"
+    />
   </v-container>
 </template>
 

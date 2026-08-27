@@ -1,13 +1,11 @@
 <script setup lang="ts">
   import type { DocumentListParams } from "@/stores/document";
   import type { Document } from "@/types/document";
-  import type { Image } from "@/types/image";
   import { computed, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
   import { useRtl } from "vuetify";
   import { useDateFormat } from "@/composables/useDateFormat";
   import { useDocumentStore } from "@/stores/document";
-  import { useImageStore } from "@/stores/image";
   import { useNotifierStore } from "@/stores/notifier";
 
   /** What v-data-table-server hands back on @update:options. */
@@ -44,7 +42,6 @@
   const { isRtl } = useRtl();
   const { formatDateTime } = useDateFormat();
   const documentStore = useDocumentStore();
-  const imageStore = useImageStore();
   const notifier = useNotifierStore();
 
   /**
@@ -57,24 +54,6 @@
   const live = ref<TableState>(tableState());
   const trash = ref<TableState>(tableState());
   const search = ref("");
-
-  // Typed string[] to satisfy v-data-table's declared `readonly string[]`, even
-  // though at runtime it writes the raw item value — a number — straight in.
-  // The expand watcher below coerces each entry with Number() rather than
-  // trusting the declared type. Only the live table expands.
-  const expanded = ref<string[]>([]);
-
-  /**
-   * A document's images, fetched when its row is first expanded.
-   *
-   * The listing itself carries none — it omits the `cover` flag, so
-   * DocumentResource returns no `images` key at all — which keeps the table a
-   * plain one instead of serialising four images, their media and their
-   * categories per row. Keyed by document id and kept after collapse, so
-   * re-expanding the same row costs nothing; loadLive() clears it.
-   */
-  const images = ref<Record<number, Image[]>>({});
-  const imagesLoading = ref<Set<number>>(new Set());
 
   // The document behind whichever dialog is open. Held rather than passed
   // inline so the dialogs keep rendering their content while closing.
@@ -145,7 +124,7 @@
       nowrap: true,
     },
     // The *document's* creator — who made the folder. Each image carries its
-    // own, shown in the expanded sub-table, and the two often differ.
+    // own, shown on the document page, and the two often differ.
     // Capped and nowrapped like the title above — this is the column that
     // actually drives row height: a long name such as "Prof. Elmore Smitham III"
     // wraps to three or four lines in a ~100px column, and wraps to a different
@@ -158,40 +137,21 @@
       maxWidth: 160,
       nowrap: true,
     },
+    // Not sortable, and it cannot be: DocumentController::SORTABLE holds no
+    // `images_count`, and IndexDocumentRequest validates sort_by against it, so
+    // a sortable header here would send a value the API answers with a 422.
+    //
+    // Counts live images only - the relation carries Image's soft-delete scope -
+    // so a document whose images are all binned reads 0 while its page's
+    // "Recently deleted" chip still lists them.
+    {
+      title: t("admin.documents.imageCount"),
+      key: "images_count",
+      sortable: false,
+    },
     { title: t("common.createdAt"), key: "created_at", sortable: true },
     { title: t("common.updatedAt"), key: "updated_at", sortable: true },
     { title: t("admin.documents.actions"), key: "actions", sortable: false },
-  ]);
-
-  const imageHeaders = computed(() => [
-    {
-      title: t("admin.documents.images.thumb"),
-      key: "thumb",
-      sortable: false,
-      width: 96,
-    },
-    { title: t("admin.documents.images.id"), key: "id", sortable: false },
-    // Capped like the outer table's title: these are image titles, so the same
-    // long value can turn up here and stretch the sub-table.
-    {
-      title: t("admin.documents.images.title"),
-      key: "title",
-      sortable: false,
-      maxWidth: 240,
-      nowrap: true,
-    },
-    {
-      title: t("admin.documents.images.creator"),
-      key: "creator",
-      sortable: false,
-      maxWidth: 160,
-      nowrap: true,
-    },
-    {
-      title: t("admin.documents.images.createdAt"),
-      key: "created_at",
-      sortable: false,
-    },
   ]);
 
   const trashedHeaders = computed(() => [
@@ -219,8 +179,6 @@
     // The image cache goes with them: keyed by document id, it would otherwise
     // survive into a listing those ids are no longer part of.
     live.value.selected = [];
-    expanded.value = [];
-    images.value = {};
     live.value.loading = true;
     try {
       const result = await documentStore.fetchDocumentPage(params(live.value));
@@ -285,36 +243,6 @@
       trash.value.page = 1;
       loadBoth();
     }, 300);
-  });
-
-  /**
-   * Fetch the images of every row that has just been expanded.
-   *
-   * Guarded on the cache and the in-flight set, so collapsing and re-expanding
-   * a row does not re-request it, and a double-toggle cannot fire two calls for
-   * the same id. The filter is applied server-side after the team scope, so an
-   * id from another team comes back empty rather than leaking.
-   */
-  watch(expanded, async (ids) => {
-    const pending = ids
-      .map(Number)
-      .filter((id) => !(id in images.value) && !imagesLoading.value.has(id));
-
-    await Promise.all(
-      pending.map(async (id) => {
-        imagesLoading.value.add(id);
-        try {
-          images.value[id] = await imageStore.fetchImages(id);
-        } catch {
-          notifier.notify(t("admin.documents.imagesLoadFailed"), "error");
-        } finally {
-          imagesLoading.value.delete(id);
-          // Set mutations are not reactive on their own; reassigning is what
-          // re-renders the row's loader.
-          imagesLoading.value = new Set(imagesLoading.value);
-        }
-      }),
-    );
   });
 
   function openCreate() {
@@ -446,7 +374,6 @@
          params instead. -->
     <v-data-table-server
       v-model="live.selected"
-      v-model:expanded="expanded"
       :header-props="headerProps"
       :headers="headers"
       :items="live.items"
@@ -455,7 +382,6 @@
       :loading="live.loading"
       :no-data-text="t('admin.documents.empty')"
       :page="live.page"
-      show-expand
       show-select
       @update:options="onLiveOptions"
     >
@@ -504,6 +430,23 @@
         {{ item.team?.name ?? t("common.emptyValue") }}
       </template>
 
+      <!--
+        The count doubles as the way in: images are managed on the document
+        page now, not in a sub-row here. Same destination as the "Open
+        document" button in the actions column.
+      -->
+      <template #item.images_count="{ item }">
+        <v-btn
+          append-icon="mdi-open-in-new"
+          color="tertiary"
+          size="small"
+          :to="{ name: '/documents/[id]', params: { id: item.id } }"
+          variant="text"
+        >
+          {{ item.images_count }}
+        </v-btn>
+      </template>
+
       <template #item.created_at="{ item }">
         {{ formatDateTime(item.created_at) }}
       </template>
@@ -543,64 +486,8 @@
         </div>
       </template>
 
-      <!-- Vuetify hands this slot a raw table row rather than a container, so
-           the tr/td colspan wrapper is required, not decorative. -->
-      <template #expanded-row="{ columns, item }">
-        <tr>
-          <td class="p-0" :colspan="columns.length">
-            <!-- The listing carries no images, so the row fetches its own on
-                 first expand. Three states, in order: still loading, loaded
-                 and empty, loaded with rows. -->
-            <v-progress-linear
-              v-if="imagesLoading.has(item.id)"
-              class="my-4"
-              indeterminate
-            />
-
-            <p
-              v-else-if="(images[item.id]?.length ?? 0) === 0"
-              class="py-4 text-center opacity-60"
-            >
-              {{ t("admin.documents.noImages") }}
-            </p>
-
-            <!-- Client-side v-data-table, not the -server variant: the fetch
-                 above returns a document's whole set, so there is nothing left
-                 to page. -->
-            <!-- No density and no background of its own: it inherits the
-                 parent table's surface so the two read as one table, and rows
-                 stay the same height as the documents above them. -->
-            <v-data-table
-              v-else
-              :header-props="headerProps"
-              :headers="imageHeaders"
-              hide-default-footer
-              :items="images[item.id]"
-              :items-per-page="-1"
-            >
-              <template #top>
-                <p class="px-4 pt-3 text-sm opacity-70">
-                  {{ t("admin.documents.imagesTitle") }}
-                </p>
-              </template>
-
-              <template #item.thumb="{ item: image }">
-                <v-avatar class="my-2" rounded size="64">
-                  <v-img :alt="image.title" cover :src="image.thumb_url" />
-                </v-avatar>
-              </template>
-
-              <template #item.created_at="{ item: image }">
-                {{ formatDateTime(image.created_at) }}
-              </template>
-            </v-data-table>
-          </td>
-        </tr>
-      </template>
     </v-data-table-server>
 
-    <!-- No show-expand: a trashed document's images are trashed with it, so
-         there is nothing live to list underneath. -->
     <v-data-table-server
       v-model="trash.selected"
       class="mt-8"

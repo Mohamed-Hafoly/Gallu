@@ -28,6 +28,9 @@
   const notifier = useNotifierStore();
 
   const confirmingDelete = ref(false);
+
+  /** A deleted image is read-only here — ImageResource serves `deleted_at`. */
+  const isTrashed = computed(() => Boolean(props.image?.deleted_at));
   const deleting = ref(false);
   const pickedFile = ref<File | null>(null);
   const isEditing = ref(false);
@@ -225,7 +228,13 @@
         />
       </v-card-text>
 
+      <!--
+        Hidden entirely for a deleted image: it can only be restored, which the
+        gallery's trash chip offers on the card. Editing or deleting one again
+        would be meaningless, and the second delete would 404 anyway.
+      -->
       <v-card-actions
+        v-if="!isTrashed"
         class="flex-row items-center justify-between [direction:ltr]"
       >
         <v-btn

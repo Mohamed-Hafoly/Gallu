@@ -19,6 +19,7 @@ declare module 'vue' {
     CategoryEditDialog: typeof import('./src/components/Categories/CategoryEditDialog.vue')['default']
     CategoryNameFields: typeof import('./src/components/Categories/CategoryNameFields.vue')['default']
     CategoryPicker: typeof import('./src/components/Images/Fields/Category/CategoryPicker.vue')['default']
+    ClampedText: typeof import('./src/components/ClampedText.vue')['default']
     ConfirmDialog: typeof import('./src/components/ConfirmDialog.vue')['default']
     CreatorField: typeof import('./src/components/Images/Fields/CreatorField.vue')['default']
     DescriptionField: typeof import('./src/components/Images/Fields/DescriptionField.vue')['default']

@@ -1,5 +1,6 @@
 import type { Team } from "@/types/team";
 import type { User } from "@/types/user";
+import type { AxiosError } from "axios";
 import { flushPromises } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mountWithPlugins } from "@/__tests__/helpers/mountWithPlugins";
@@ -52,10 +53,10 @@ function makeUser(): User {
   };
 }
 
-async function mountDialog() {
+async function mountDialog(props: Record<string, unknown> = {}) {
   const wrapper = mountWithPlugins(
     DocumentCreateDialog,
-    { props: { modelValue: true } },
+    { props: { modelValue: true, ...props } },
     { auth: { user: makeUser() } },
   );
   await flushPromises();
@@ -84,6 +85,16 @@ function submitButton(wrapper: Wrapper) {
     .find((button) =>
       button.text().includes(i18n.global.t("common.create") as string),
     )!;
+}
+
+const DUPLICATE = "This team already has a document with that title.";
+
+/** What the axios interceptor hands a caller back for a 422. */
+function validationError(fieldErrors: Record<string, string[]>) {
+  return Object.assign(new Error("Request failed"), {
+    fieldErrors,
+    userMessage: DUPLICATE,
+  }) as AxiosError;
 }
 
 beforeEach(() => {
@@ -161,5 +172,87 @@ describe("DocumentCreateDialog", () => {
     );
     expect(wrapper.emitted("created")).toBeUndefined();
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+  });
+
+  /**
+   * The /documents page files under the caller's own team, so there is no
+   * choice to offer — the id is submitted without the user ever seeing a field.
+   */
+  it("submits a locked team without showing the picker", async () => {
+    const wrapper = await mountDialog({ lockedTeamId: 3 });
+
+    expect(fields(wrapper).props("hideTeam")).toBe(true);
+
+    fields(wrapper).vm.$emit("update:title", "Q3 Report");
+    await flushPromises();
+
+    await submitButton(wrapper).trigger("click");
+    await flushPromises();
+
+    expect(createDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Q3 Report", team_id: 3 }),
+    );
+  });
+
+  // Unlocked is /admin/documents and a super-admin creating from /documents:
+  // the picker stays and its value is what gets submitted.
+  it("submits the picked team when none is locked", async () => {
+    const wrapper = await mountDialog();
+
+    expect(fields(wrapper).props("hideTeam")).toBe(false);
+
+    await fillIn(wrapper, { title: "Q3 Report", teamId: 2 });
+    await submitButton(wrapper).trigger("click");
+    await flushPromises();
+
+    expect(createDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ team_id: 2 }),
+    );
+  });
+
+  /**
+   * Titles are unique per team, and only the server knows the team's other
+   * titles. A 422 therefore has to land on the field — a toast alone leaves the
+   * user staring at a form with nothing marked wrong.
+   */
+  it("puts a rejected title on the title field", async () => {
+    createDocument.mockRejectedValue(validationError({ title: [DUPLICATE] }));
+    const wrapper = await mountDialog();
+    await fillIn(wrapper, { title: "Q3 Report", teamId: 1 });
+
+    await submitButton(wrapper).trigger("click");
+    await flushPromises();
+
+    expect(fields(wrapper).props("titleError")).toBe(DUPLICATE);
+    expect(wrapper.emitted("created")).toBeUndefined();
+  });
+
+  // A failure on some other field must not be mislabelled as a title problem.
+  it("leaves the title field clean when another field is rejected", async () => {
+    createDocument.mockRejectedValue(validationError({ team_id: ["Nope"] }));
+    const wrapper = await mountDialog();
+    await fillIn(wrapper, { title: "Q3 Report", teamId: 1 });
+
+    await submitButton(wrapper).trigger("click");
+    await flushPromises();
+
+    expect(fields(wrapper).props("titleError")).toBe("");
+  });
+
+  // The message is about a specific value, so it must not survive that value
+  // being changed — otherwise the user edits the title and is still told no.
+  it("clears the message once the title is edited", async () => {
+    createDocument.mockRejectedValue(validationError({ title: [DUPLICATE] }));
+    const wrapper = await mountDialog();
+    await fillIn(wrapper, { title: "Q3 Report", teamId: 1 });
+
+    await submitButton(wrapper).trigger("click");
+    await flushPromises();
+
+    expect(fields(wrapper).props("titleError")).toBe(DUPLICATE);
+
+    await fillIn(wrapper, { title: "Q3 Report v2", teamId: 1 });
+
+    expect(fields(wrapper).props("titleError")).toBe("");
   });
 });

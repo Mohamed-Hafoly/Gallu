@@ -1,6 +1,5 @@
 import type { DocumentListParams } from "@/stores/document";
 import type { Document } from "@/types/document";
-import type { Image } from "@/types/image";
 import { flushPromises } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mountWithPlugins } from "@/__tests__/helpers/mountWithPlugins";
@@ -18,13 +17,13 @@ vi.mock("@/plugins/router", () => ({
   default: { replace: vi.fn() },
 }));
 
-const { fetchDocumentPage, fetchImages, deleteDocument, restoreDocument } =
-  vi.hoisted(() => ({
+const { fetchDocumentPage, deleteDocument, restoreDocument } = vi.hoisted(
+  () => ({
     fetchDocumentPage: vi.fn(),
-    fetchImages: vi.fn(),
     deleteDocument: vi.fn(),
     restoreDocument: vi.fn(),
-  }));
+  }),
+);
 
 vi.mock("@/stores/document", () => ({
   useDocumentStore: () => ({
@@ -34,15 +33,9 @@ vi.mock("@/stores/document", () => ({
   }),
 }));
 
-vi.mock("@/stores/image", () => ({
-  useImageStore: () => ({ fetchImages }),
-}));
-
 /**
  * The listing is server-side, so these assert the *params* the page sends
- * rather than any client-side filtering — and, for the expanded rows, that a
- * document's images are a second request made on demand rather than data
- * riding along with the row.
+ * rather than any client-side filtering.
  */
 
 /** The search box debounces for 300ms before it even starts fetching. */
@@ -64,21 +57,6 @@ function document_(id: number, overrides: Partial<Document> = {}): Document {
     updated_at: "2026-08-24T10:00:00.000000Z",
     deleted_at: null,
     ...overrides,
-  };
-}
-
-function image(id: number, creator: string): Image {
-  return {
-    id,
-    title: `Image ${id}`,
-    description: null,
-    url: `/i/${id}.jpg`,
-    thumb_url: `/i/${id}-thumb.jpg`,
-    categories: [],
-    document_id: 1,
-    creator,
-    created_at: "2026-08-24T10:00:00.000000Z",
-    updated_at: "2026-08-24T10:00:00.000000Z",
   };
 }
 
@@ -139,24 +117,9 @@ function liveFetches() {
   return callsFor(undefined).length;
 }
 
-/**
- * Clicks a row's expand toggle. Driving the model directly is not equivalent:
- * v-data-table declares the expansion model as `readonly string[]` but writes
- * the raw item value — a number — into it, so an emitted `["1"]` matches no row.
- *
- * The toggle is the last button in the row, because the expand column is
- * appended after `actions`.
- */
-async function expand(wrapper: Wrapper, rowIndex: number) {
-  const buttons = bodyRows(wrapper)[rowIndex].findAll("button");
-  await buttons.at(-1)!.trigger("click");
-  await flushPromises();
-}
-
 beforeEach(() => {
   i18n.global.locale.value = "en";
   fetchDocumentPage.mockReset();
-  fetchImages.mockReset();
   deleteDocument.mockReset();
   restoreDocument.mockReset();
   deleteDocument.mockResolvedValue(undefined);
@@ -166,7 +129,6 @@ beforeEach(() => {
     items: Array.from({ length: 10 }, (_, index) => document_(index + 1)),
     total: 35,
   });
-  fetchImages.mockResolvedValue([]);
 });
 
 describe("admin documents listing", () => {
@@ -223,69 +185,6 @@ describe("admin documents listing", () => {
     await flushPromises();
 
     expect(lastParams().page).toBe(1);
-  });
-});
-
-describe("expanded image sub-rows", () => {
-  it("does not carry images in the listing itself", async () => {
-    await mountPage();
-
-    // No `cover` flag: the listing is a plain table, and DocumentResource
-    // returns no images key for it at all.
-    expect(lastParams()).not.toHaveProperty("cover");
-    expect(fetchImages).not.toHaveBeenCalled();
-  });
-
-  it("fetches a document's images on expand, filtered to that document", async () => {
-    fetchImages.mockResolvedValue([image(1, "Ada Lovelace"), image(2, "Alan T")]);
-    const wrapper = await mountPage();
-
-    await expand(wrapper, 0);
-
-    expect(fetchImages).toHaveBeenCalledWith(1);
-
-    const nested = wrapper.findComponent({ name: "VDataTable" });
-    expect(nested.exists()).toBe(true);
-    expect(nested.props("items")).toHaveLength(2);
-  });
-
-  // The point of the nested table: a document's creator and an image's creator
-  // are separate columns, and an image uploaded by a teammate must show theirs.
-  it("lists each image with its own creator, not the document's", async () => {
-    fetchImages.mockResolvedValue([
-      image(1, "Ada Lovelace"),
-      image(2, "Grace Hopper"),
-    ]);
-    const wrapper = await mountPage();
-
-    await expand(wrapper, 0);
-
-    const nested = wrapper.findComponent({ name: "VDataTable" });
-    expect(nested.text()).toContain("Grace Hopper");
-  });
-
-  // Keyed by document id and kept after collapse, so re-expanding is free.
-  it("does not refetch a row's images when it is expanded again", async () => {
-    fetchImages.mockResolvedValue([image(1, "Ada Lovelace")]);
-    const wrapper = await mountPage();
-
-    await expand(wrapper, 0);
-    await expand(wrapper, 0);
-    await expand(wrapper, 0);
-
-    expect(fetchImages).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows a fallback line instead of an empty table when a document has none", async () => {
-    fetchImages.mockResolvedValue([]);
-    const wrapper = await mountPage();
-
-    await expand(wrapper, 0);
-
-    expect(wrapper.findComponent({ name: "VDataTable" }).exists()).toBe(false);
-    expect(wrapper.text()).toContain(
-      i18n.global.t("admin.documents.noImages") as string,
-    );
   });
 });
 
@@ -437,5 +336,65 @@ describe("bulk actions", () => {
     expect(restoreDocument).toHaveBeenCalledTimes(2);
     expect(restoreDocument).toHaveBeenCalledWith(4);
     expect(restoreDocument).toHaveBeenCalledWith(5);
+  });
+});
+
+/**
+ * Images are managed on the document page now, not in a sub-row here, so the
+ * count doubles as the way in. Nothing on this screen expands any more.
+ */
+describe("image count column", () => {
+  /**
+   * The count cell's link. `:to` renders an anchor rather than a button, so
+   * rowButton() cannot find it — and two anchors in the row carry this icon,
+   * since the actions column's "Open document" points at the same place. The
+   * count is what tells them apart: that one is icon-only.
+   */
+  function countButton(wrapper: Wrapper, rowIndex: number) {
+    return bodyRows(wrapper)
+      [rowIndex].findAll("a")
+      .find(
+        (link) =>
+          link.element.querySelector(".mdi-open-in-new") !== null &&
+          link.text().trim() !== "",
+      )!;
+  }
+
+  it("shows each document's image count", async () => {
+    fetchDocumentPage.mockResolvedValue({
+      items: [document_(1, { images_count: 7 })],
+      total: 1,
+    });
+
+    const wrapper = await mountPage();
+
+    expect(countButton(wrapper, 0).text()).toContain("7");
+  });
+
+  it("links the count to the document page", async () => {
+    const wrapper = await mountPage();
+
+    // The prop, not an href: the router is mocked, so RouterLink resolves
+    // nothing and the anchor renders without one. `append-icon` is what
+    // separates this from the actions column's icon-only "Open document".
+    const link = bodyRows(wrapper)[0]
+      .findAllComponents({ name: "VBtn" })
+      .find(
+        (button: { props: (name: string) => unknown }) =>
+          button.props("appendIcon") === "mdi-open-in-new",
+      )!;
+
+    expect(link.props("to")).toEqual({
+      name: "/documents/[id]",
+      params: { id: 1 },
+    });
+  });
+
+  // The sub-rows are gone; a surviving expand toggle would be the tell.
+  it("no longer expands rows", async () => {
+    const wrapper = await mountPage();
+
+    expect(table(wrapper).props("showExpand")).toBeFalsy();
+    expect(wrapper.find(".mdi-chevron-down").exists()).toBe(false);
   });
 });

@@ -78,9 +78,9 @@ function type(
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-function mountDialog() {
+function mountDialog(props: Record<string, unknown> = {}) {
   return mountWithPlugins(DocumentEditDialog, {
-    props: { document: document_, modelValue: true },
+    props: { document: document_, modelValue: true, ...props },
   });
 }
 
@@ -194,5 +194,57 @@ describe("DocumentEditDialog", () => {
     );
     expect(wrapper.emitted("updated")).toBeUndefined();
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+  });
+});
+
+/**
+ * On /documents a document may be renamed but never moved between teams — that
+ * stays an /admin/documents action, which is where the picker lives.
+ */
+describe("locked team", () => {
+  it("drops the team field and submits the documents own team", async () => {
+    wrapper = mountDialog({ lockedTeamId: 1 });
+    await flushPromises();
+
+    expect(
+      wrapper.findComponent({ name: "DocumentFields" }).props("hideTeam"),
+    ).toBe(true);
+
+    type(titleInput(), "Renamed");
+    await flushPromises();
+
+    saveButton().click();
+    await flushPromises();
+
+    expect(updateDocument).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({ title: "Renamed", team_id: 1 }),
+    );
+  });
+
+  /**
+   * isDirty compares the team as well as the text. With the field locked that
+   * half can never change, so Save has to key off the title and description
+   * alone — otherwise it would be unreachable here.
+   */
+  it("still enables save on a title change alone", async () => {
+    wrapper = mountDialog({ lockedTeamId: 1 });
+    await flushPromises();
+
+    expect(saveButton().disabled).toBe(true);
+
+    type(titleInput(), "Renamed");
+    await flushPromises();
+
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("keeps the picker when no team is locked", async () => {
+    wrapper = mountDialog();
+    await flushPromises();
+
+    expect(
+      wrapper.findComponent({ name: "DocumentFields" }).props("hideTeam"),
+    ).toBe(false);
   });
 });

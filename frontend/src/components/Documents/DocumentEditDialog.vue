@@ -1,12 +1,19 @@
 <script setup lang="ts">
   import type { Document } from "@/types/document";
+  import type { AxiosError } from "axios";
   import type { VForm } from "vuetify/components";
   import { computed, reactive, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
   import { useDocumentStore } from "@/stores/document";
   import { useNotifierStore } from "@/stores/notifier";
 
-  const props = defineProps<{ document: Document }>();
+  /**
+   * `lockedTeamId` drops the team field and submits that id instead - the
+   * /documents page, where editing may rename a document but never move it
+   * between teams. /admin/documents omits it and keeps the picker, which is
+   * where a super-admin moves documents.
+   */
+  const props = defineProps<{ document: Document; lockedTeamId?: number }>();
 
   const emit = defineEmits<{
     updated: [];
@@ -21,6 +28,10 @@
   const formRef = ref<VForm | null>(null);
   const formValid = ref<boolean | null>(null);
   const submitting = ref(false);
+  // Server-side only: the title must be unique within the team, which the
+  // browser has no cheap way to know. Cleared as soon as the title is edited,
+  // so the message never outlives the value it was about.
+  const titleError = ref("");
 
   const form = reactive({
     title: "",
@@ -45,6 +56,7 @@
       original.title = form.title;
       original.description = form.description;
       original.teamId = form.teamId;
+      titleError.value = "";
       formRef.value?.resetValidation();
     },
     { immediate: true },
@@ -59,6 +71,7 @@
     form.title = original.title;
     form.description = original.description;
     form.teamId = original.teamId;
+    titleError.value = "";
     formRef.value?.resetValidation();
   });
 
@@ -87,13 +100,15 @@
       await documentStore.updateDocument(props.document.id, {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
-        // Non-null by the time we are here: teamRules blocks submit otherwise.
-        team_id: form.teamId!,
+        // Non-null by the time we are here: either the caller locked a team, or
+        // teamRules blocked submit until one was picked.
+        team_id: props.lockedTeamId ?? form.teamId!,
       });
 
       emit("updated");
       close();
-    } catch {
+    } catch (error) {
+      titleError.value = (error as AxiosError).fieldErrors?.title?.[0] ?? "";
       notifier.notify(t("admin.documents.updateFailed"), "error");
     } finally {
       submitting.value = false;
@@ -137,6 +152,9 @@
           v-model:description="form.description"
           v-model:team-id="form.teamId"
           v-model:title="form.title"
+          :hide-team="lockedTeamId !== undefined"
+          :title-error="titleError"
+          @update:title="titleError = ''"
         />
       </v-card-text>
 

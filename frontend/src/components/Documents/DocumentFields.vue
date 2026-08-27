@@ -7,6 +7,21 @@
 
   // Models only, mirroring TeamFields: the read-only metadata (id, creator,
   // timestamps) belongs to the dialog that owns the document, not here.
+  const props = defineProps<{
+    /**
+     * A server-side rejection for the title — today, the per-team collision,
+     * which the browser cannot check for itself. Vuetify composes this with
+     * `rules`, so the local required/max checks still run.
+     */
+    titleError?: string;
+    /**
+     * Drop the team select entirely — for callers that already know the team
+     * and submit it themselves (the /documents page, where a document is filed
+     * under the caller's own team and cannot be moved).
+     */
+    hideTeam?: boolean;
+  }>();
+
   const title = defineModel<string>("title", { default: "" });
   const description = defineModel<string>("description", { default: "" });
   const teamId = defineModel<number | null>("teamId", { default: null });
@@ -38,6 +53,9 @@
   const teamMenuProps = { location: "top", maxHeight: 300 } as const;
 
   onMounted(async () => {
+    // A hidden field must not cost a request.
+    if (props.hideTeam) return;
+
     // Defaulted rather than assigned blind: a failed or stubbed fetch would
     // otherwise leave the list undefined and break teamOptions.
     teams.value = (await teamStore.fetchPickerTeams()) ?? [];
@@ -50,6 +68,7 @@
       v-model="title"
       class="[&_input]:truncate"
       dir="auto"
+      :error-messages="titleError"
       :label="t('admin.documents.documentTitle')"
       :rules="titleRules"
     />
@@ -72,6 +91,7 @@
          to exactly one team — so no `multiple`, and no :search binding either:
          the list loads once and Vuetify filters it client-side. -->
     <v-autocomplete
+      v-if="!hideTeam"
       v-model="teamId"
       density="comfortable"
       :items="teamOptions"

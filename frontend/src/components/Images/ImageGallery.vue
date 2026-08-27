@@ -29,6 +29,31 @@
    */
   const OWNER_MINE = "mine";
 
+  /** What the trash chip sends: deleted rows only, never mixed with live ones. */
+  const TRASHED_ONLY = "only";
+
+  /** The three chips, in the order they render. */
+  type Filter = "all" | "mine" | "trash";
+
+  /** How long typing settles before the term reaches the URL and the wire. */
+  const SEARCH_DEBOUNCE = 300;
+
+  /** Newest first, and stable: ImageController adds `id` as a tie-break. */
+  const DEFAULT_SORT_BY = "created_at";
+  const DEFAULT_SORT_ORDER = "desc";
+
+  /**
+   * Sortable columns, mirroring the admin images table minus `id` — and minus
+   * `document_id`, which is fixed on this page and could not reorder anything.
+   * `deleted_at` is only meaningful on the trash chip; see sortOptions.
+   */
+  const SORT_FIELDS = [
+    { value: "title", label: "gallery.titleLabel" },
+    { value: "creator", label: "admin.images.creator" },
+    { value: "created_at", label: "common.createdAt" },
+    { value: "updated_at", label: "common.updatedAt" },
+  ] as const;
+
   const { t } = useI18n();
   const { isRtl } = useRtl();
   const { formatRelative } = useDateFormat();
@@ -36,6 +61,15 @@
   const notifier = useNotifierStore();
   const route = useRoute();
   const router = useRouter();
+
+  /**
+   * What the user is typing, seeded from the URL and debounced into it.
+   *
+   * Separate from the query param on purpose: the URL is the source of truth
+   * for the *request*, but writing it on every keystroke would refetch per
+   * letter and bury the history in near-identical entries.
+   */
+  const searchInput = ref(String(route.query.search ?? ""));
 
   const images = ref<Image[]>([]);
   const selectedImage = ref<Image | null>(null);
@@ -54,11 +88,11 @@
   /**
    * How many images each chip stands for, shown beside its label.
    *
-   * Kept for both chips at once rather than read off the current listing, so
-   * the count on the chip you are not on is a real number instead of a blank
-   * that only fills in once you click it.
+   * Kept for all three at once rather than read off the current listing, so the
+   * counts on the chips you are not on are real numbers instead of blanks that
+   * only fill in once you click them.
    */
-  const totals = ref({ all: 0, mine: 0 });
+  const totals = ref<Record<Filter, number>>({ all: 0, mine: 0, trash: 0 });
 
   /**
    * Which chip is active, derived from the query string rather than held in a
@@ -68,34 +102,112 @@
    * `undefined` — no param at all — is "All". The backend accepts no `owner=all`
    * because "all" is the absence of the filter, so the default URL stays clean.
    */
-  const owner = computed(() =>
-    route.query.owner === OWNER_MINE ? OWNER_MINE : undefined,
+  const filter = computed<Filter>(() => {
+    if (route.query.trashed === TRASHED_ONLY) return "trash";
+
+    return route.query.owner === OWNER_MINE ? "mine" : "all";
+  });
+
+  /** The term that actually goes on the wire; "" is sent as nothing at all. */
+  const searchTerm = computed(() => String(route.query.search ?? "") || undefined);
+
+  const sortBy = computed(() => String(route.query.sort_by ?? DEFAULT_SORT_BY));
+  const sortOrder = computed(() =>
+    route.query.sort_order === "asc" ? "asc" : DEFAULT_SORT_ORDER,
   );
+
+  /**
+   * `deleted_at` only while the trash chip is active: every live row's is null,
+   * so offering it elsewhere would be a sort that does nothing.
+   */
+  const sortOptions = computed(() => [
+    ...SORT_FIELDS.map((field) => ({ value: field.value, title: t(field.label) })),
+    ...(filter.value === "trash"
+      ? [{ value: "deleted_at", title: t("admin.images.deletedAt") }]
+      : []),
+  ]);
+
+  /** Writes one query key without disturbing the others. */
+  function replaceQuery(patch: Record<string, string | undefined>) {
+    const query = { ...route.query };
+
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) delete query[key];
+      else query[key] = value;
+    }
+
+    router.replace({ query });
+  }
+
+  /**
+   * What each chip puts on the wire. All sends nothing at all: the trash is a
+   * separate bucket, not a subset, so a listing that does not ask for deleted
+   * rows must never receive any.
+   */
+  const filterParams = computed(() => {
+    if (filter.value === "mine") return { owner: OWNER_MINE } as const;
+    if (filter.value === "trash") return { trashed: TRASHED_ONLY } as const;
+
+    return {};
+  });
 
   /**
    * v-chip-group binds a value, so the chips read and write the query param
    * through here. Spreading the rest of `route.query` is what keeps the search
    * and further filters planned for this row from being wiped by a chip click.
    *
-   * push rather than replace: a filter change is a place the user can go back
-   * from, and the watcher on `owner` reloads on a popstate just as it does on a
-   * click, so back and forward move between the chips for free.
+   * replace rather than push: the chips filter one page, they are not places to
+   * navigate between, so a toggle should not cost a history entry. Pushing made
+   * Back walk out of the document one chip click at a time instead of leaving
+   * it. The cost, taken deliberately: back and forward no longer step through
+   * chip states. The param still lives in the URL, so a refresh or a shared
+   * link lands on the right chip either way.
    */
-  const ownerChip = computed({
-    get: () => owner.value ?? "all",
-    set: (value: string) => {
+  const filterChip = computed({
+    get: () => filter.value,
+    set: (value: Filter) => {
       const query = { ...route.query };
 
-      if (value === OWNER_MINE) query.owner = OWNER_MINE;
-      else delete query.owner;
+      // Both keys are cleared before one is set: the chips are one axis, and
+      // leaving the other behind would produce ?owner=mine&trashed=only, which
+      // reads as two filters at once and is not a state any chip can show.
+      delete query.owner;
+      delete query.trashed;
 
-      router.push({ query });
+      if (value === "mine") query.owner = OWNER_MINE;
+      if (value === "trash") query.trashed = TRASHED_ONLY;
+
+      // Leaving the trash while sorted by deleted_at would strand the select on
+      // a value it no longer offers, and sort live rows by a column that is
+      // null on every one of them.
+      if (value !== "trash" && query.sort_by === "deleted_at") {
+        delete query.sort_by;
+      }
+
+      router.replace({ query });
     },
   });
 
   function openDetail(image: Image) {
     selectedImage.value = image;
     detailOpen.value = true;
+  }
+
+  /**
+   * The time a card shows, labelled with what it actually is.
+   *
+   * A bare relative time is ambiguous once it can mean two things, so the
+   * label travels with it: "last updated 3 hours ago" normally, "deleted 3
+   * hours ago" in the trash, where the card shows deleted_at instead.
+   *
+   * `filter` is "all" on /gallery, which has no chips, so that path lands on
+   * updated_at without needing a documentId check.
+   */
+  function cardTimestamp(image: Image) {
+    const trashed = filter.value === "trash";
+    const time = formatRelative(trashed ? image.deleted_at : image.updated_at);
+
+    return t(trashed ? "gallery.deletedAgo" : "gallery.lastUpdated", { time });
   }
 
   function onDeleted(id: number) {
@@ -106,12 +218,36 @@
     // The chip counts have to follow, or they keep advertising a row that is no
     // longer in the grid. The active chip is decremented in place; the other is
     // re-asked, because an admin may delete a teammate's image and the listing
-    // does not say whose an image was.
-    const active = owner.value ?? "all";
-    totals.value[active] = Math.max(totals.value[active] - 1, 0);
-    void fetchIdleTotal();
+    // does not say whose an image was. Deleting also grows the trash.
+    totals.value[filter.value] = Math.max(totals.value[filter.value] - 1, 0);
+    void fetchIdleTotals();
 
     notifier.notify(t("gallery.deleted"));
+  }
+
+  /**
+   * Put a deleted image back.
+   *
+   * No per-image permission check: the trash listing is scoped to rows the
+   * caller may restore - a member sees only their own, an admin the team's -
+   * and ImagePolicy::restore applies the same rule server-side.
+   *
+   * Dropped locally rather than reloaded, like onDeleted, so restoring the
+   * fourth of twenty does not throw away the scroll position.
+   */
+  async function restore(image: Image) {
+    try {
+      await imageStore.restoreImage(image.id);
+    } catch {
+      notifier.notify(t("admin.images.restoreFailed"), "error");
+      return;
+    }
+
+    images.value = images.value.filter((row) => row.id !== image.id);
+    totals.value.trash = Math.max(totals.value.trash - 1, 0);
+    void fetchIdleTotals();
+
+    notifier.notify(t("documents.restored"));
   }
 
   /** The flat /gallery listing: everything the caller may see, in one request. */
@@ -140,42 +276,63 @@
         document_id: props.documentId,
         page: target,
         per_page: PER_PAGE,
-        // Omitted entirely for "All": there is no owner=all, and an empty
-        // string would be a 422.
-        ...(owner.value ? { owner: owner.value } : {}),
+        // Omitted entirely for "All": there is no owner=all, and the trash is
+        // a separate bucket rather than a subset of it.
+        ...filterParams.value,
+        search: searchTerm.value,
+        sort_by: sortBy.value,
+        sort_order: sortOrder.value,
       });
 
       images.value = first ? result.items : [...images.value, ...result.items];
       page.value = target;
       lastPage.value = result.lastPage;
       // The active chip's count comes free with its own page - only the other
-      // one has to be asked for. See fetchIdleTotal().
-      totals.value[owner.value ?? "all"] = result.total;
+      // ones have to be asked for. See fetchIdleTotals().
+      totals.value[filter.value] = result.total;
     } finally {
       loading.value = false;
       appending.value = false;
     }
   }
 
+  /** What each chip would send, so an idle one can be counted without selecting it. */
+  const PARAMS_BY_FILTER = {
+    all: {},
+    mine: { owner: OWNER_MINE },
+    trash: { trashed: TRASHED_ONLY },
+  } as const;
+
   /**
-   * The count on the chip that is *not* selected.
+   * The counts on the two chips that are *not* selected.
    *
-   * A separate request, but the cheapest possible one: per_page 1 means a single
-   * row of payload, and only meta.total is read off it. Deliberately not awaited
-   * with the page above - a slow count must not hold the grid back, and it
-   * carries no `page`, so it can never disturb the feed's own paging.
+   * Separate requests, but the cheapest possible ones: per_page 1 means a single
+   * row of payload, and only meta.total is read off each. Deliberately not
+   * awaited with the page above - a slow count must not hold the grid back, and
+   * they carry no `page`, so they can never disturb the feed's own paging.
    */
-  async function fetchIdleTotal() {
-    const idle = owner.value ? undefined : OWNER_MINE;
+  async function fetchIdleTotals() {
+    const idle = (Object.keys(PARAMS_BY_FILTER) as Filter[]).filter(
+      (key) => key !== filter.value,
+    );
 
-    const result = await imageStore.fetchImagePage({
-      document_id: props.documentId,
-      page: 1,
-      per_page: 1,
-      ...(idle ? { owner: idle } : {}),
-    });
+    await Promise.all(
+      idle.map(async (key) => {
+        const result = await imageStore.fetchImagePage({
+          document_id: props.documentId,
+          page: 1,
+          per_page: 1,
+          ...PARAMS_BY_FILTER[key],
+          // The search narrows a count the same way it narrows the grid, so the
+          // chips agree with what is on screen. The sort is left out: ordering
+          // cannot change a total, and omitting it keeps these probes identical
+          // across sort changes.
+          search: searchTerm.value,
+        });
 
-    totals.value[idle ?? "all"] = result.total;
+        totals.value[key] = result.total;
+      }),
+    );
   }
 
   function reload() {
@@ -184,11 +341,11 @@
     page.value = 1;
     lastPage.value = 1;
 
-    // The grid's own request goes out first; the count is a straggler nobody
+    // The grid's own request goes out first; the counts are stragglers nobody
     // waits on.
     const pending = fetchPage(1);
 
-    void fetchIdleTotal();
+    void fetchIdleTotals();
 
     return pending;
   }
@@ -211,52 +368,188 @@
     await reload();
   }
 
-  watch(owner, () => reload());
+  /**
+   * Debounced into the URL rather than straight into a request: the query
+   * string is what the fetch reads, so writing it is what triggers a reload,
+   * and doing that per keystroke would be a request per letter.
+   */
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+  watch(searchInput, (value) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      replaceQuery({ search: value.trim() || undefined });
+    }, SEARCH_DEBOUNCE);
+  });
+
+  // Back/forward and a chip's own fallback can change the term without going
+  // through the field, so the field follows the URL too.
+  watch(searchTerm, (value) => {
+    if ((value ?? "") !== searchInput.value.trim()) searchInput.value = value ?? "";
+  });
+
+  /**
+   * An explicit list rather than a deep watch on a rebuilt params object, which
+   * would fire on every render. Everything funnels through reload() so page and
+   * lastPage reset together - calling fetchPage directly would leave the
+   * infinite scroll paging through the previous result set.
+   */
+  watch([filter, searchTerm, sortBy, sortOrder], () => reload());
+
+  /**
+   * The only thing the page reaches in for. The dialog and its reload stay here
+   * so the page never has to refresh the feed itself; the button lives up in
+   * the document header beside edit and delete.
+   */
+  defineExpose({
+    openCreate: () => {
+      createOpen.value = true;
+    },
+  });
 
   onMounted(reload);
 </script>
 
 <template>
-  <div>
-    <!-- Only inside a document: a flat listing has nothing to upload into. -->
-    <v-btn
+  <div class="flex flex-col gap-4">
+    <!--
+      Where the block upload button used to be. Upload is an icon in the
+      document header now, beside edit and delete.
+
+      Styled to match /admin/images so the two screens read as one app; the
+      server variant takes no `:search` prop, the term rides in the request.
+    -->
+    <v-text-field
       v-if="documentId !== undefined"
-      block
-      color="tertiary"
-      prepend-icon="mdi-image-plus"
-      @click="createOpen = true"
+      v-model="searchInput"
+      bg-color="surface-darken-2"
+      clearable
+      density="comfortable"
+      hide-details
+      :label="t('documents.searchImages')"
+      variant="outlined"
     >
-      {{ t("gallery.upload") }}
-    </v-btn>
+      <template #prepend-inner>
+        <v-icon class="opacity-100" color="tertiary" icon="mdi-magnify" />
+      </template>
+
+      <template #clear="{ props: clearProps }">
+        <v-icon v-bind="clearProps" class="opacity-100" color="tertiary" />
+      </template>
+    </v-text-field>
 
     <!--
       The filter row. Only inside a document — /gallery has no owner axis, since
-      it is already everything the caller may see. Search and further filters
-      are planned to sit alongside the chips here.
-    -->
-    <v-chip-group
-      v-if="documentId !== undefined"
-      v-model="ownerChip"
-      class="mt-1"
-      color="tertiary"
-      filter
-      mandatory
-    >
-      <!--
-        The count is a plain span rather than a v-badge: a badge floats over the
-        chip's corner and would be clipped by the group's horizontal scroll on a
-        narrow screen.
-      -->
-      <v-chip value="all">
-        {{ t("documents.allImages") }}
-        <span class="ms-2 text-sm opacity-70">{{ totals.all }}</span>
-      </v-chip>
+      it is already everything the caller may see.
 
-      <v-chip value="mine">
-        {{ t("documents.yourImages") }}
-        <span class="ms-2 text-sm opacity-70">{{ totals.mine }}</span>
-      </v-chip>
-    </v-chip-group>
+      Wraps below sm, with the sort controls dropping to their own line.
+      basis-full makes that break deterministic rather than incidental: the chip
+      group claims the whole first line, so the sort group has nowhere else to
+      go. Tailwind's breakpoints are overridden to Vuetify's in
+      styles/tailwind.css, so sm here is the same 600px useDisplay() uses.
+
+      ms-auto on the sort group rather than justify-between on the container:
+      space-between distributes items *within a line*, so once the sort group is
+      alone on the second line it becomes the only item and lands at the line's
+      start — the opposite of what is wanted. ms-auto pins it to the end whether
+      it shares a row or has one to itself, and being logical it flips with RTL.
+
+      min-w-0 on the chip group is still load-bearing, for a different reason
+      now: the group scrolls horizontally, and a flex item defaults to
+      min-width:auto, so without it the chips refuse to shrink and spill past
+      the card edge instead of scrolling inside their line.
+    -->
+    <div
+      v-if="documentId !== undefined"
+      class="mt-1 flex flex-wrap items-center gap-4"
+    >
+      <v-chip-group
+        v-model="filterChip"
+        class="min-w-0 basis-full sm:basis-auto"
+        color="tertiary"
+        filter
+        mandatory
+      >
+        <!--
+          The count is a plain span rather than a v-badge: a badge floats over
+          the chip's corner and would be clipped by the group's horizontal
+          scroll on a narrow screen.
+        -->
+        <v-chip value="all">
+          {{ t("documents.allImages") }}
+          <span class="ms-2 text-sm opacity-70">{{ totals.all }}</span>
+        </v-chip>
+
+        <v-chip value="mine">
+          {{ t("documents.yourImages") }}
+          <span class="ms-2 text-sm opacity-70">{{ totals.mine }}</span>
+        </v-chip>
+
+        <!--
+          Shown to everyone, not just admins: the backend scopes this listing
+          rather than refusing it, so a member reaches their own deleted images
+          and an admin the whole team's.
+        -->
+        <v-chip value="trash">
+          {{ t("documents.trashedImages") }}
+          <span class="ms-2 text-sm opacity-70">{{ totals.trash }}</span>
+        </v-chip>
+      </v-chip-group>
+
+      <div class="ms-auto flex shrink-0 items-center gap-2">
+        <!--
+          Both surfaces set explicitly, or they disagree: an outlined field is
+          transparent and shows the page through it, while the dropdown is a
+          v-list in a teleported overlay painting theme surface on its own.
+
+          list-props rather than menu-props' contentClass — the list paints its
+          own background over the overlay content, so a class on the overlay
+          would sit underneath it and never show.
+        -->
+        <v-select
+          bg-color="primary-darken-4"
+          class="w-44"
+          density="compact"
+          hide-details
+          
+          item-title="title"
+          item-value="value"
+          :items="sortOptions"
+          :label="t('documents.sortBy')"
+          :list-props="{ bgColor: 'primary-darken-4' }"
+          :model-value="sortBy"
+          variant="outlined"
+          @update:model-value="replaceQuery({ sort_by: $event })"
+        />
+
+        <v-btn
+          color="tertiary"
+          :icon="
+            sortOrder === 'asc' ? 'mdi-sort-ascending' : 'mdi-sort-descending'
+          "
+          size="small"
+          :title="t('documents.sortDirection')"
+          variant="text"
+          @click="
+            replaceQuery({ sort_order: sortOrder === 'asc' ? 'desc' : 'asc' })
+          "
+        />
+      </div>
+    </div>
+
+    <!--
+      Only on the trash chip. Reuses the admin screen's notice rather than a
+      second copy of the same sentence.
+    -->
+    <v-alert
+      v-if="filter === 'trash'"
+      class="mt-3"
+      density="compact"
+      type="warning"
+      variant="tonal"
+    >
+      {{ t("admin.images.trashedTitleNote") }}
+    </v-alert>
 
     <v-progress-linear v-if="loading" class="mt-4" indeterminate />
 
@@ -266,7 +559,13 @@
       generic one.
     -->
     <p v-else-if="images.length === 0" class="mt-10 text-center opacity-60">
-      {{ owner ? t("documents.noImagesYours") : t("gallery.empty") }}
+      {{
+        filter === "trash"
+          ? t("admin.images.trashedEmpty")
+          : filter === "mine"
+            ? t("documents.noImagesYours")
+            : t("gallery.empty")
+      }}
     </p>
 
     <template v-else>
@@ -330,11 +629,17 @@
               <CategoryChips :items="image.categories" />
 
               <!--
-                dir="auto" picks the ellipsis side from the description's own text;
-                useRtl() keeps every card's text pinned to the UI edge regardless.
+                truncate, not line-clamp-2: Chrome 148 clips the clamp without
+                painting an ellipsis, and no standard multi-line alternative is
+                supported there. text-overflow does paint one, at the cost of
+                being a single line.
+
+                dir="auto" picks the ellipsis side from the description's own
+                text; useRtl() keeps every card's text pinned to the UI edge
+                regardless.
               -->
               <p
-                class="mt-4 line-clamp-2"
+                class="mt-4 truncate"
                 :class="isRtl ? 'text-right' : 'text-left'"
                 dir="auto"
               >
@@ -346,13 +651,35 @@
                 renders in the active locale, so this string's script always
                 matches the UI and dir="auto" would be inert. Only user-supplied
                 text (title, description, creator) can disagree with the UI.
+
+                cardTimestamp() carries its own label, so the string already
+                says which time it is — created_at was dropped because the
+                seeded images were made in one batch and it read the same on
+                every card.
               -->
-              <p
-                class="mt-auto pt-4 text-sm opacity-70"
-                :class="isRtl ? 'text-right' : 'text-left'"
-              >
-                {{ formatRelative(image.created_at) }}
-              </p>
+              <div class="mt-auto pt-4 flex items-center justify-between gap-2">
+                <p
+                  class="text-sm opacity-70"
+                  :class="isRtl ? 'text-right' : 'text-left'"
+                >
+                  {{ cardTimestamp(image) }}
+                </p>
+
+                <!--
+                  .stop is load-bearing: the card itself opens the detail
+                  dialog, so without it restoring would also open the image.
+                -->
+                <v-btn
+                  v-if="filter === 'trash'"
+                  color="tertiary"
+                  density="comfortable"
+                  icon="mdi-restore"
+                  size="small"
+                  :title="t('documents.restore')"
+                  variant="text"
+                  @click.stop="restore(image)"
+                />
+              </div>
             </v-card-text>
           </v-card>
         </v-col>

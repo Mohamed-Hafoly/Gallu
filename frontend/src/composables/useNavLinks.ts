@@ -64,6 +64,11 @@ export function useNavLinks() {
       },
     },
     {
+      title: t("nav.teams"),
+      value: "/admin/teams",
+      props: { to: { name: "admin-teams" }, prependIcon: "mdi-account-group" },
+    },
+    {
       title: t("nav.documents"),
       value: "/admin/documents",
       props: {
@@ -78,11 +83,6 @@ export function useNavLinks() {
         to: { name: "admin-images" },
         prependIcon: "mdi-image-multiple",
       },
-    },
-    {
-      title: t("nav.teams"),
-      value: "/admin/teams",
-      props: { to: { name: "admin-teams" }, prependIcon: "mdi-account-group" },
     },
     {
       title: t("nav.categories"),

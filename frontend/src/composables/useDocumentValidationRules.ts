@@ -9,9 +9,12 @@ export function useDocumentValidationRules() {
   const maxLength = (max: number) => (v: string) =>
     (v?.trim().length ?? 0) <= max || t("validation.maxLength", { max });
 
-  // Mirrors backend/app/Http/Requests/StoreDocumentRequest.php and
-  // UpdateDocumentRequest.php — change both together. Note the limits are the
-  // document's own, not the team's 40/255.
+  // Mirrors the length half of DocumentValidationRules::title() in the backend
+  // — change both together. Note the limits are the document's own, not the
+  // team's 40/255. The uniqueness half is deliberately not duplicated: a title
+  // only has to be unique within its team, and the browser holds no list of
+  // that team's other titles to check against. A collision comes back as a 422
+  // and lands on the field through DocumentFields' `titleError` prop.
   const titleRules = [required, maxLength(140)];
   // Nullable server-side, so no `required` here.
   const descriptionRules = [maxLength(400)];
