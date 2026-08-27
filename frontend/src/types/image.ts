@@ -9,6 +9,12 @@ export interface Image {
   categories: Category[];
   /** Every image belongs to exactly one document; images.document_id is NOT NULL. */
   document_id: number;
+  /**
+   * The owner's id, which is what decides whether the caller may edit or delete
+   * this image — `creator` is a display name, so two users sharing one would be
+   * indistinguishable. See useImagePermissions.
+   */
+  user_id: number;
   // Required, not optional: images.user_id is NOT NULL, and ImageResource
   // serves `creator` unconditionally rather than behind whenLoaded().
   creator: string;

@@ -2,7 +2,8 @@
   import { useRtl } from "vuetify";
 
   /**
-   * A dialog field the user can never change — the creator and the created-at.
+   * A dialog field the user can never change — the id, creator, and the three
+   * timestamps. Callers pre-format: `value` is a plain string, not a date.
    *
    * On edit it becomes a *disabled* input rather than staying plain text, so the
    * edit form reads as one consistent set of fields; in view mode it matches the

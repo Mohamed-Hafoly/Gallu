@@ -36,10 +36,7 @@
     return (
       entries
         .map((entry) => `${entry.user.id}:${entry.role}`)
-        // sort(), not toSorted(): the lib target is ES2022 (@vue/tsconfig pins
-        // it to Vite's build target), and map() already handed us a throwaway
-        // array, so there is nothing to protect from the mutation.
-        .sort()
+        .toSorted()
         .join("|")
     );
   }

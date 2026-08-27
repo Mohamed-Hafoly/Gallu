@@ -231,8 +231,6 @@
     "titleLabel": "العنوان",
     "titleHint": "مطلوب ، بحد أقصى 140 حرفًا",
     "descriptionHint": "بحد أقصى 400 حرف",
-    "categoriesHint": "إختر تصنيفًا واحدًا على الأقل",
-    "categoriesRequired": "إختر تصنيفًا واحدًا على الأقل",
     "imageRequired": "إختر صورة",
     "chooseImage": "إختر صورة",
     "changeImage": "تغيير الصورة",

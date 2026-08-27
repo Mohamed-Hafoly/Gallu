@@ -37,7 +37,6 @@
 
   const categories = ref<Category[]>([]);
   const selectedFile = ref<File | null>(null);
-  const categoryError = ref("");
   const fileError = ref("");
   // Server-side only: the title must be unique within the document, which the
   // browser has no cheap way to know. Cleared as soon as the title is edited,
@@ -50,10 +49,7 @@
   });
 
   const canSubmit = computed(
-    () =>
-      formValid.value === true &&
-      selectedFile.value !== null &&
-      form.selectedCategoryIds.length > 0,
+    () => formValid.value === true && selectedFile.value !== null,
   );
 
   function reset() {
@@ -61,7 +57,6 @@
     form.selectedCategoryIds = [];
     form.description = "";
     selectedFile.value = null;
-    categoryError.value = "";
     fileError.value = "";
     titleError.value = "";
     formRef.value?.resetValidation();
@@ -78,14 +73,9 @@
 
   async function submit() {
     const { valid } = await formRef.value!.validate();
-    categoryError.value =
-      form.selectedCategoryIds.length > 0
-        ? ""
-        : t("gallery.categoriesRequired");
     fileError.value = selectedFile.value ? "" : t("gallery.imageRequired");
 
-    if (!valid || form.selectedCategoryIds.length === 0 || !selectedFile.value)
-      return;
+    if (!valid || !selectedFile.value) return;
 
     submitting.value = true;
     try {
@@ -133,7 +123,6 @@
         <CategoriesField
           v-model="form.selectedCategoryIds"
           editable
-          :error="categoryError"
           :items="categories"
         />
 

@@ -231,8 +231,6 @@
     "titleLabel": "Title",
     "titleHint": "Required, max 140 characters",
     "descriptionHint": "Max 400 characters",
-    "categoriesHint": "Select at least one category",
-    "categoriesRequired": "Select at least one category",
     "imageRequired": "Select an image",
     "chooseImage": "Choose an image",
     "changeImage": "Change Image",

@@ -18,6 +18,10 @@ const { fetchImages, fetchImagePage, restoreImage } = vi.hoisted(() => ({
   restoreImage: vi.fn(),
 }));
 
+// The image detail dialog reads the auth store, which imports the real
+// router module — building a router here would blow up on its HMR hook.
+vi.mock("@/plugins/router", () => ({ default: { replace: vi.fn() } }));
+
 vi.mock("@/stores/image", () => ({
   useImageStore: () => ({ fetchImages, fetchImagePage, restoreImage }),
 }));
@@ -110,6 +114,7 @@ function imageFixture(id: number, overrides: Partial<Image> = {}): Image {
     thumb_url: `https://example.test/${id}-thumb.jpg`,
     categories: [],
     document_id: 7,
+    user_id: 1,
     creator: "Ada",
     created_at: "2026-08-01T10:00:00.000000Z",
     updated_at: "2026-08-01T10:00:00.000000Z",

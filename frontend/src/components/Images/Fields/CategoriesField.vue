@@ -5,7 +5,6 @@
   defineProps<{
     items: Category[];
     editable?: boolean;
-    error?: string;
   }>();
   const selectedCategoryIds = defineModel<number[]>({ default: () => [] });
 
@@ -18,20 +17,17 @@
       {{ t("gallery.categories") }}
     </div>
 
+    <!--
+      Categories are optional, so the picker carries no rule and no caption: it
+      neither takes part in the surrounding v-form nor has anything to say when
+      nothing is picked.
+    -->
     <CategoryPicker
       v-if="editable"
       v-model="selectedCategoryIds"
       class="ms-2"
       :items="items"
     />
-
-    <p
-      v-if="editable"
-      class="ms-2"
-      :class="error ? 'text-error' : 'opacity-70'"
-    >
-      {{ error || t("gallery.categoriesHint") }}
-    </p>
 
     <template v-else>
       <CategoryChips

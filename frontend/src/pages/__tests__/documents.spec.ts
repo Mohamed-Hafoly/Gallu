@@ -45,6 +45,7 @@ function image(id: number): Image {
     thumb_url: `/i/${id}-thumb.jpg`,
     categories: [],
     document_id: 1,
+    user_id: 1,
     creator: "Ada Lovelace",
     created_at: "2026-08-24T10:00:00.000000Z",
     updated_at: "2026-08-24T10:00:00.000000Z",

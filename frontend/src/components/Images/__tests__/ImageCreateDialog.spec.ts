@@ -40,8 +40,9 @@ function mountDialog() {
 
 /**
  * Drives a submit that reaches the store. The local rules are synchronous, so a
- * title, a category and a file all have to be present or submit() returns early
- * and never calls createImage.
+ * title and a file both have to be present or submit() returns early and never
+ * calls createImage. Categories are deliberately left empty — they are optional,
+ * and an empty picker must not block the upload.
  */
 async function submitWith(wrapper: ReturnType<typeof mountDialog>, title: string) {
   const vm = wrapper.vm as unknown as {
@@ -51,7 +52,6 @@ async function submitWith(wrapper: ReturnType<typeof mountDialog>, title: string
   };
 
   vm.form.title = title;
-  vm.form.selectedCategoryIds = [1];
   vm.selectedFile = new File(["x"], "x.png", { type: "image/png" });
 
   await flushPromises();

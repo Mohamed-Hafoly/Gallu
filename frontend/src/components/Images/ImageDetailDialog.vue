@@ -6,6 +6,8 @@
   import { computed, onMounted, reactive, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
   import { useDateFormat } from "@/composables/useDateFormat";
+  import { useImagePermissions } from "@/composables/useImagePermissions";
+  import { useAuthStore } from "@/stores/auth";
   import { useCategoryStore } from "@/stores/category";
   import { useImageStore } from "@/stores/image";
   import { useNotifierStore } from "@/stores/notifier";
@@ -23,6 +25,8 @@
 
   const { t } = useI18n();
   const { formatDateTime } = useDateFormat();
+  const { canEdit } = useImagePermissions();
+  const authStore = useAuthStore();
   const categoryStore = useCategoryStore();
   const imageStore = useImageStore();
   const notifier = useNotifierStore();
@@ -31,13 +35,19 @@
 
   /** A deleted image is read-only here — ImageResource serves `deleted_at`. */
   const isTrashed = computed(() => Boolean(props.image?.deleted_at));
+
+  /**
+   * Gates the id row, and cosmetically: the id is in the payload every caller
+   * already receives, so this hides a field rather than protecting anything —
+   * the same kind of check useNavLinks and the router guard make.
+   */
+  const isSuperAdmin = computed(() => Boolean(authStore.user?.is_super_admin));
   const deleting = ref(false);
   const pickedFile = ref<File | null>(null);
   const isEditing = ref(false);
   const formRef = ref<VForm | null>(null);
   const formValid = ref<boolean | null>(null);
   const allCategories = ref<Category[]>([]);
-  const categoryError = ref("");
   // Server-side only: the title must be unique within the document, which the
   // browser has no cheap way to know. Cleared as soon as the title is edited,
   // so the message never outlives the value it was about.
@@ -77,10 +87,7 @@
   });
 
   const canSave = computed(
-    () =>
-      isDirty.value &&
-      formValid.value === true &&
-      form.selectedCategoryIds.length > 0,
+    () => isDirty.value && formValid.value === true,
   );
 
   function resetEditState() {
@@ -95,7 +102,6 @@
 
     isEditing.value = false;
     pickedFile.value = null;
-    categoryError.value = "";
     titleError.value = "";
     formRef.value?.resetValidation();
   }
@@ -146,12 +152,7 @@
     if (!isEditing.value || !props.image) return;
 
     const { valid } = await formRef.value!.validate();
-    categoryError.value =
-      form.selectedCategoryIds.length > 0
-        ? ""
-        : t("gallery.categoriesRequired");
-
-    if (!valid || form.selectedCategoryIds.length === 0) return;
+    if (!valid) return;
 
     submitting.value = true;
     try {
@@ -202,9 +203,21 @@
 
       <v-card-text class="text-base">
         <!--
-          Both ReadOnlyFields sit outside the edit flow — they touch neither
-          `form` nor `original`, so they cannot make isDirty report a change.
+          Every ReadOnlyField here sits outside the edit flow — they touch
+          neither `form` nor `original`, so none of them can make isDirty report
+          a change or enable Save.
+
+          They still take `:editable`, which is what makes them mirror the rest
+          of the form: plain text in view mode, a disabled input while editing,
+          so the layout does not jump when the mode changes.
         -->
+        <ReadOnlyField
+          v-if="isSuperAdmin"
+          :editable="isEditing"
+          :label="t('admin.images.id')"
+          :value="String(image.id)"
+        />
+
         <ReadOnlyField
           :editable="isEditing"
           :label="t('gallery.creator')"
@@ -215,8 +228,7 @@
           v-model="form.selectedCategoryIds"
           class="mt-5"
           :editable="isEditing"
-          :error="categoryError"
-          :items="isEditing ? allCategories : image.categories"
+            :items="isEditing ? allCategories : image.categories"
         />
 
         <DescriptionField v-model="form.description" :editable="isEditing" />
@@ -226,15 +238,41 @@
           :label="t('common.createdAt')"
           :value="formatDateTime(image.created_at)"
         />
+
+        <ReadOnlyField
+          :editable="isEditing"
+          :label="t('common.updatedAt')"
+          :value="formatDateTime(image.updated_at)"
+        />
+
+        <!--
+          Only for a trashed image, where it is the timestamp that matters.
+          formatDateTime returns the empty-value dash for a null, so this could
+          render harmlessly on a live image — it is hidden because an empty
+          "Deleted" row is noise, not because it would break.
+        -->
+        <ReadOnlyField
+          v-if="isTrashed"
+          :editable="isEditing"
+          :label="t('admin.images.deletedAt')"
+          :value="formatDateTime(image.deleted_at)"
+        />
       </v-card-text>
 
       <!--
         Hidden entirely for a deleted image: it can only be restored, which the
         gallery's trash chip offers on the card. Editing or deleting one again
         would be meaningless, and the second delete would 404 anyway.
+
+        Hidden too for anyone who may not change this image — a member looking
+        at a teammate's. One check covers both buttons because ImagePolicy's
+        delete delegates to update, so canDelete *is* canEdit; and it gates the
+        container rather than the two buttons so nobody is left staring at an
+        empty action bar. The ConfirmDialog below sits outside this block but is
+        only ever opened from the Delete button, so it needs no gate of its own.
       -->
       <v-card-actions
-        v-if="!isTrashed"
+        v-if="!isTrashed && canEdit(image)"
         class="flex-row items-center justify-between [direction:ltr]"
       >
         <v-btn

@@ -2,6 +2,14 @@
     "extends": "@vue/tsconfig/tsconfig.dom.json",
     "include": ["*.d.ts", "src/**/*", "src/**/*.vue", "vitest.setup.ts"],
     "compilerOptions": {
+        // @vue/tsconfig stops at ES2022 to match Vite's build target and leaves
+        // newer built-ins for the project to opt into. ES2023.Array is opted in
+        // for the non-mutating array methods (toSorted, toReversed, with, ...),
+        // which eslint-config-vuetify's unicorn rules expect over their
+        // in-place counterparts. Types only — these have been Baseline widely
+        // available since early 2026, so they need no polyfill under Vite's
+        // default `baseline-widely-available` target.
+        "lib": ["ES2022", "ES2023.Array", "DOM", "DOM.Iterable"],
         "composite": true,
         "moduleResolution": "Bundler",
         "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",

@@ -18,52 +18,48 @@ beforeEach(() => {
   i18n.global.locale.value = "en";
 });
 
-// The caption is matched by element, not by a styling class: Vuetify's utility
-// classes emit no CSS at all here (styles/settings.scss sets `$utilities:
-// false`), so `text-caption` was stripped app-wide as dead markup. The editable
-// branch renders exactly one <p> — CategoryPicker renders only chips.
-describe("editable mode caption", () => {
-  it("renders exactly one caption line, not a hint and an error stacked", () => {
-    // Regression: the hint and the error were previously two separate <p>s
-    // showing the same sentence twice after a failed submit.
-    const wrapper = mountField({ error: "Select at least one category" });
-    const captions = wrapper.findAll("p");
+// Categories are optional, so the editable branch is the picker and nothing
+// else: no rule, no v-input enrolling it in the surrounding v-form, and no
+// caption. Matched by element rather than by a styling class, because Vuetify's
+// utility classes emit no CSS here (styles/settings.scss sets `$utilities:
+// false`) — CategoryPicker itself renders only chips.
+describe("editable mode", () => {
+  it("renders the picker", () => {
+    const wrapper = mountField();
 
-    expect(captions).toHaveLength(1);
+    expect(wrapper.findComponent({ name: "CategoryPicker" }).exists()).toBe(true);
   });
 
-  it("shows the neutral hint, muted, when there is no error", () => {
-    const caption = mountField().find("p");
+  it("says nothing when nothing is selected", () => {
+    // Regression: an empty picker used to be a validation error, and the field
+    // carried a "select at least one category" caption to announce it.
+    const wrapper = mountField({ modelValue: [] });
 
-    expect(caption.text()).toBe(i18n.global.t("gallery.categoriesHint"));
-    expect(caption.classes()).toContain("opacity-70");
-    expect(caption.classes()).not.toContain("text-error");
+    expect(wrapper.findAll("p")).toHaveLength(0);
   });
 
-  it("swaps to the error text and error colour when an error is set", () => {
-    const caption = mountField({ error: "Select at least one category" })
-      .find("p");
+  it("stays out of the surrounding form", () => {
+    const wrapper = mountField({ modelValue: [] });
 
-    expect(caption.text()).toBe("Select at least one category");
-    expect(caption.classes()).toContain("text-error");
-    expect(caption.classes()).not.toContain("opacity-70");
+    expect(wrapper.findComponent({ name: "VInput" }).exists()).toBe(false);
   });
 });
 
 describe("read-only mode", () => {
-  it("does not render the editable hint", () => {
-    const wrapper = mountWithPlugins(CategoriesField, {
-      props: { items: categories, editable: false },
-    });
-
-    expect(wrapper.text()).not.toContain(i18n.global.t("gallery.categoriesHint"));
-  });
-
   it("falls back to an empty-state message when there are no categories", () => {
     const wrapper = mountWithPlugins(CategoriesField, {
       props: { items: [], editable: false },
     });
 
     expect(wrapper.text()).toContain(i18n.global.t("gallery.noCategories"));
+  });
+
+  it("renders the chips instead when there are some", () => {
+    const wrapper = mountWithPlugins(CategoriesField, {
+      props: { items: categories, editable: false },
+    });
+
+    expect(wrapper.findComponent({ name: "CategoryChips" }).exists()).toBe(true);
+    expect(wrapper.text()).not.toContain(i18n.global.t("gallery.noCategories"));
   });
 });
