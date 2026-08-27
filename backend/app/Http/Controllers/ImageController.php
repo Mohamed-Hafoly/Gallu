@@ -176,7 +176,7 @@ class ImageController extends Controller
             ->usingFileName(Str::uuid().'.'.$request->file('image')->getClientOriginalExtension())
             ->toMediaCollection(Image::IMAGES_COLLECTION);
 
-        $image->categories()->sync($request->input('selected_category_ids'));
+        $this->syncCategories($image, $request);
 
         return new ImageResource($image->load(['categories', 'media', 'user']));
     }
@@ -197,9 +197,34 @@ class ImageController extends Controller
             $image->getFirstMedia(Image::IMAGES_COLLECTION)?->update(['name' => $image->title]);
         }
 
-        $image->categories()->sync($request->input('selected_category_ids'));
+        $this->syncCategories($image, $request);
 
         return new ImageResource($image->load(['categories', 'media', 'user']));
+    }
+
+    /**
+     * Sync the picked categories, preserving attachments to soft-deleted ones.
+     *
+     * The picker only ever offers live categories, so a trashed one's id never
+     * comes back in the payload — while sync() derives the current set from the
+     * raw pivot table, which does see those rows. A plain sync therefore drops
+     * them silently, and restoring the category later would find the image gone
+     * from it.
+     *
+     * On store() the trashed set is always empty; both paths go through here
+     * anyway so they cannot drift apart again.
+     */
+    private function syncCategories(Image $image, StoreImageRequest|UpdateImageRequest $request): void
+    {
+        // Qualified, since `id` is ambiguous against the pivot join.
+        $trashedIds = $image->categories()->onlyTrashed()->pluck('categories.id')->all();
+
+        // ?? [] because categories are optional and FormData omits an empty
+        // array entirely, so validated() hands back null rather than [].
+        $image->categories()->sync([
+            ...($request->validated('selected_category_ids') ?? []),
+            ...$trashedIds,
+        ]);
     }
 
     public function destroy(Image $image): Response

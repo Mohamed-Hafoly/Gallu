@@ -34,8 +34,7 @@ class StoreImageRequest extends FormRequest
             // passing - the request still fails on document_id itself.
             'title' => ImageValidationRules::title($this->integer('document_id')),
             'description' => ['nullable', 'string', 'max:400'],
-            'selected_category_ids' => ['required', 'array', 'min:1'],
-            'selected_category_ids.*' => ['integer', Rule::exists('categories', 'id')->whereNull('deleted_at')],
+            ...ImageValidationRules::categories(),
         ];
     }
 

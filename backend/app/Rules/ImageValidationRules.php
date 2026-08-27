@@ -55,6 +55,31 @@ class ImageValidationRules
         return ['title.unique' => __('image.duplicateTitle')];
     }
 
+    /**
+     * Categories are optional: an image may have none at all, so there is no
+     * count requirement here and nothing for the frontend to mirror — unlike
+     * title() and image(), this one has no counterpart in
+     * useImageValidationRules.ts.
+     *
+     * nullable rather than sometimes, because the SPA sends the payload as
+     * FormData and an empty array serialises to no key at all — an image with
+     * no categories arrives with the field absent, not empty.
+     *
+     * What does still apply is the element rule: whereNull('deleted_at') so a
+     * soft-deleted category cannot be newly attached. An attachment that
+     * already points at one is preserved separately, in
+     * ImageController::syncCategories(), which is not something a rule can do.
+     *
+     * @return array<string, list<mixed>>
+     */
+    public static function categories(): array
+    {
+        return [
+            'selected_category_ids' => ['nullable', 'array'],
+            'selected_category_ids.*' => ['integer', Rule::exists('categories', 'id')->whereNull('deleted_at')],
+        ];
+    }
+
     public static function image(bool $required = true): array
     {
         return [

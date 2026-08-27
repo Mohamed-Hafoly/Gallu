@@ -35,6 +35,14 @@ class ImageResource extends JsonResource
             // ->with('user') throws a LazyLoadingViolationException in dev and
             // CI (Model::shouldBeStrict in AppServiceProvider) rather than
             // quietly serving images with no creator.
+            //
+            // `user_id` is unconditional for the same reason but needs no eager
+            // load at all — it is a local column, not a relation. It exists
+            // because `creator` is a display name: two users sharing one would
+            // be indistinguishable, so the SPA cannot decide "is this mine?"
+            // from the name. ImageDetailDialog needs that to decide whether to
+            // offer Edit and Delete, mirroring ImagePolicy::update.
+            'user_id' => $this->user_id,
             'creator' => $this->user->name,
             'document_id' => $this->document_id,
             'created_at' => $this->created_at,

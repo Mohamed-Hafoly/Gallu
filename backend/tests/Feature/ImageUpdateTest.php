@@ -11,6 +11,8 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
 use function Pest\Laravel\actingAs;
+use function Pest\Laravel\assertDatabaseHas;
+use function Pest\Laravel\assertDatabaseMissing;
 use function Pest\Laravel\patchJson;
 
 uses(RefreshDatabase::class);
@@ -204,4 +206,64 @@ it('keeps the existing media but syncs its name when no new image is uploaded', 
     $media = $image->fresh()->getFirstMedia(Image::IMAGES_COLLECTION);
     expect($media->file_name)->toBe($originalFileName);
     expect($media->name)->toBe('Renamed title');
+});
+
+// ------------------------------------------------------------ categories
+
+it('lets an update clear every category', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
+    $image = createImageFor($user, $document);
+
+    actingAs($user)
+        ->patchJson("/api/images/{$image->id}", validUpdatePayload(['selected_category_ids' => []]))
+        ->assertOk()
+        ->assertJsonCount(0, 'data.categories');
+
+    assertDatabaseMissing('category_image', ['image_id' => $image->id]);
+});
+
+it('rejects attaching a soft deleted category', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
+    $image = createImageFor($user, $document);
+    $trashed = Category::factory()->create();
+    $trashed->delete();
+
+    actingAs($user)
+        ->patchJson("/api/images/{$image->id}", validUpdatePayload([
+            'selected_category_ids' => [$trashed->id],
+        ]))
+        ->assertJsonValidationErrorFor('selected_category_ids.0');
+});
+
+// The picker only offers live categories, so an edit made while one of the
+// image's categories is trashed sends an id list that omits it. sync() would
+// read that as "detach", and restoring the category would then find the image
+// gone from it - see ImageController::syncCategories().
+it('keeps an image attached to a soft deleted category across an update', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
+    [$live, $trashed] = Category::factory()->count(2)->create()->all();
+    $image = createImageFor($user, $document, [
+        'selected_category_ids' => [$live->id, $trashed->id],
+    ]);
+
+    $trashed->delete();
+
+    actingAs($user)
+        ->patchJson("/api/images/{$image->id}", validUpdatePayload([
+            'selected_category_ids' => [$live->id],
+        ]))
+        ->assertOk()
+        // The trashed one is filtered out of the response by the soft delete
+        // scope, not detached.
+        ->assertJsonCount(1, 'data.categories');
+
+    assertDatabaseHas('category_image', [
+        'image_id' => $image->id,
+        'category_id' => $trashed->id,
+    ]);
+
+    $trashed->restore();
+
+    expect($image->fresh()->categories->pluck('id')->all())
+        ->toEqualCanonicalizing([$live->id, $trashed->id]);
 });

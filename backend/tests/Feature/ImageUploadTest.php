@@ -44,6 +44,7 @@ it('uploads an image into a document', function () {
         ->assertCreated()
         ->assertJsonPath('data.title', 'My photo')
         ->assertJsonPath('data.creator', $user->name)
+        ->assertJsonPath('data.user_id', $user->id)
         ->assertJsonPath('data.document_id', $document->id);
 
     expect(Image::count())->toBe(1);
@@ -107,12 +108,28 @@ it('requires a title', function () {
         ->assertJsonValidationErrorFor('title');
 });
 
-it('requires at least one category', function () {
+// Categories are optional. Both shapes are covered because they reach the
+// server differently: JSON can carry an empty array, while the SPA's FormData
+// drops the key altogether, which is why the rule is nullable rather than
+// requiring an array.
+it('accepts an image with no categories', function () {
     ['member' => $user, 'document' => $document] = teamFixture();
 
     actingAs($user)
         ->postJson('/api/images', validImagePayload($document, ['selected_category_ids' => []]))
-        ->assertJsonValidationErrorFor('selected_category_ids');
+        ->assertCreated()
+        ->assertJsonCount(0, 'data.categories');
+});
+
+it('accepts an image with the categories key missing entirely', function () {
+    ['member' => $user, 'document' => $document] = teamFixture();
+    $payload = validImagePayload($document);
+    unset($payload['selected_category_ids']);
+
+    actingAs($user)
+        ->postJson('/api/images', $payload)
+        ->assertCreated()
+        ->assertJsonCount(0, 'data.categories');
 });
 
 it('rejects a duplicate title in the same document', function () {
@@ -287,7 +304,7 @@ it('refuses to let a member delete a teammates image, but lets an admin', functi
 
 // Three rows, not one: Builder::hydrate() only arms the lazy-loading guard for
 // queries returning more than one model.
-it('returns a creator on every row of a multi image listing', function () {
+it('returns an owner on every row of a multi image listing', function () {
     ['member' => $member, 'document' => $document] = teamFixture();
     Image::factory()->count(3)->for($member)->for($document)->create();
 
@@ -297,6 +314,10 @@ it('returns a creator on every row of a multi image listing', function () {
         ->assertJsonCount(3, 'data')
         ->json('data');
 
-    expect($rows)->each->toHaveKeys(['creator', 'document_id']);
+    expect($rows)->each->toHaveKeys(['creator', 'user_id', 'document_id']);
     expect(array_column($rows, 'creator'))->toBe(array_fill(0, 3, $member->name));
+    // The id, not just the name: `creator` is a display name, so two users
+    // sharing one would be indistinguishable and the SPA could not tell whose
+    // image it is looking at.
+    expect(array_column($rows, 'user_id'))->toBe(array_fill(0, 3, $member->id));
 });
