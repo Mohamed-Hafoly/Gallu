@@ -5,7 +5,9 @@
   import { useRoute, useRouter } from "vue-router";
   import { useRtl } from "vuetify";
   import { useDateFormat } from "@/composables/useDateFormat";
+  import { useImagePermissions } from "@/composables/useImagePermissions";
   import { useInfiniteScroll } from "@/composables/useInfiniteScroll";
+  import { useAuthStore } from "@/stores/auth";
   import { useImageStore } from "@/stores/image";
   import { useNotifierStore } from "@/stores/notifier";
 
@@ -59,6 +61,8 @@
   const { formatRelative } = useDateFormat();
   const imageStore = useImageStore();
   const notifier = useNotifierStore();
+  const authStore = useAuthStore();
+  const { canDelete } = useImagePermissions();
   const route = useRoute();
   const router = useRouter();
 
@@ -75,6 +79,18 @@
   const selectedImage = ref<Image | null>(null);
   const detailOpen = ref(false);
   const createOpen = ref(false);
+
+  /** Whether the grid is in selection mode. Off until the toggle turns it on. */
+  const selecting = ref(false);
+
+  /**
+   * Ids, like the admin tables' `selected: number[]` — theirs is keyed by id
+   * implicitly, through Vuetify's default item-value; here it is explicit.
+   */
+  const selected = ref<number[]>([]);
+
+  const bulkInFlight = ref(false);
+  const bulkDeleteOpen = ref(false);
 
   // Two flags, not one: `loading` replaces the grid with a bar for the first
   // page, `appending` puts a spinner under it for every page after. Sharing one
@@ -109,7 +125,9 @@
   });
 
   /** The term that actually goes on the wire; "" is sent as nothing at all. */
-  const searchTerm = computed(() => String(route.query.search ?? "") || undefined);
+  const searchTerm = computed(
+    () => String(route.query.search ?? "") || undefined,
+  );
 
   const sortBy = computed(() => String(route.query.sort_by ?? DEFAULT_SORT_BY));
   const sortOrder = computed(() =>
@@ -121,11 +139,75 @@
    * so offering it elsewhere would be a sort that does nothing.
    */
   const sortOptions = computed(() => [
-    ...SORT_FIELDS.map((field) => ({ value: field.value, title: t(field.label) })),
+    ...SORT_FIELDS.map((field) => ({
+      value: field.value,
+      title: t(field.label),
+    })),
     ...(filter.value === "trash"
       ? [{ value: "deleted_at", title: t("admin.images.deletedAt") }]
       : []),
   ]);
+
+  /**
+   * Who may turn selection on, and where.
+   *
+   * An admin may act on any image in their team, so every chip is fair game. A
+   * member may only act on their own, and All is full of teammates' images — so
+   * they get the mode on Yours and on Recently deleted, where every row is
+   * theirs by construction, and not on All.
+   *
+   * Cosmetic, like every other check in this app: ImagePolicy is what denies,
+   * and each id in a bulk run is authorised on its own.
+   */
+  const canSelect = computed(() => {
+    const user = authStore.user;
+
+    if (!user) return false;
+
+    return (
+      user.is_super_admin || user.role === "admin" || filter.value !== "all"
+    );
+  });
+
+  /**
+   * Whether one card may be picked. canSelect already guarantees this in every
+   * reachable state — the same "belt to that braces" the documents permissions
+   * keep — and restore needs no check at all, since the trashed listing is
+   * already scoped to rows the caller may restore.
+   */
+  function canPick(image: Image) {
+    return filter.value === "trash" || canDelete(image);
+  }
+
+  /**
+   * One handler for the whole card, because in select mode the card *is* the
+   * checkbox: clicking anywhere on it picks rather than opening the image.
+   *
+   * The checkbox keeps its own @click.stop so a click there toggles once
+   * rather than twice, and the per-card restore button is hidden while
+   * selecting so nothing on the card does anything else.
+   *
+   * Falls through to the dialog for a card that cannot be picked. canSelect
+   * makes that unreachable today — the mode is only offered where every row is
+   * actionable — but a dead card that swallows clicks would be worse than one
+   * that just opens.
+   */
+  function onCardClick(image: Image) {
+    if (selecting.value && canPick(image)) togglePick(image);
+    else openDetail(image);
+  }
+
+  function togglePick(image: Image) {
+    selected.value = selected.value.includes(image.id)
+      ? selected.value.filter((id) => id !== image.id)
+      : [...selected.value, image.id];
+  }
+
+  /** Leaving the mode drops the selection with it; nothing else would. */
+  function toggleSelecting() {
+    selecting.value = !selecting.value;
+    if (!selecting.value) selected.value = [];
+  }
 
   /** Writes one query key without disturbing the others. */
   function replaceQuery(patch: Record<string, string | undefined>) {
@@ -250,6 +332,76 @@
     notifier.notify(t("documents.restored"));
   }
 
+  /**
+   * Run one action across the selection.
+   *
+   * There is no batch endpoint, so each id is its own request. allSettled
+   * rather than all: one rejection must not abandon the rest, and the count of
+   * failures is what gets reported — the same shape as the admin tables.
+   *
+   * Where this deliberately parts company with them: they finish by reloading,
+   * which is also how their selection gets cleared. Reloading here would throw
+   * away every page scrolled so far and jump the viewport to the top, so the
+   * rows that succeeded are spliced out locally instead — the same choice
+   * onDeleted and restore already make — and the selection is cleared by hand.
+   */
+  async function runBulk(
+    action: (id: number) => Promise<unknown>,
+    successKey: string,
+    failureKey: string,
+  ) {
+    // Copied before the await: the array is emptied below, and the admin
+    // version copies for the same reason.
+    const ids = [...selected.value];
+
+    bulkInFlight.value = true;
+    try {
+      const results = await Promise.allSettled(ids.map((id) => action(id)));
+      const failed = results.filter((r) => r.status === "rejected").length;
+
+      // Only the ones that actually went through leave the grid; a row that
+      // failed is still there, and still selected in spirit if not in state.
+      const removed = new Set(
+        ids.filter((_, index) => results[index]!.status === "fulfilled"),
+      );
+
+      images.value = images.value.filter((image) => !removed.has(image.id));
+      totals.value[filter.value] = Math.max(
+        totals.value[filter.value] - removed.size,
+        0,
+      );
+      void fetchIdleTotals();
+
+      selected.value = [];
+
+      if (failed > 0)
+        notifier.notify(t(failureKey, { count: failed }), "error");
+      else notifier.notify(t(successKey, { count: ids.length }));
+    } finally {
+      bulkInFlight.value = false;
+    }
+  }
+
+  async function bulkDestroy() {
+    await runBulk(
+      (id) => imageStore.deleteImage(id),
+      "admin.images.bulkDeleted",
+      "admin.images.bulkDeleteFailed",
+    );
+
+    // ConfirmDialog does not close itself, as on the admin screens.
+    bulkDeleteOpen.value = false;
+  }
+
+  // No confirmation, unlike bulk delete: restoring is not destructive.
+  async function bulkRestore() {
+    await runBulk(
+      (id) => imageStore.restoreImage(id),
+      "admin.images.bulkRestored",
+      "admin.images.bulkRestoreFailed",
+    );
+  }
+
   /** The flat /gallery listing: everything the caller may see, in one request. */
   async function fetchAll() {
     loading.value = true;
@@ -341,6 +493,11 @@
     page.value = 1;
     lastPage.value = 1;
 
+    // Cleared here because reload() is the single funnel for a chip, search or
+    // sort change — the same rule the admin loaders follow, and what stops the
+    // selection holding an id that is no longer on screen.
+    selected.value = [];
+
     // The grid's own request goes out first; the counts are stragglers nobody
     // waits on.
     const pending = fetchPage(1);
@@ -385,7 +542,8 @@
   // Back/forward and a chip's own fallback can change the term without going
   // through the field, so the field follows the URL too.
   watch(searchTerm, (value) => {
-    if ((value ?? "") !== searchInput.value.trim()) searchInput.value = value ?? "";
+    if ((value ?? "") !== searchInput.value.trim())
+      searchInput.value = value ?? "";
   });
 
   /**
@@ -395,6 +553,17 @@
    * infinite scroll paging through the previous result set.
    */
   watch([filter, searchTerm, sortBy, sortOrder], () => reload());
+
+  /**
+   * Only a chip change leaves the mode; reload() clears the selection on a
+   * search or sort change too, but dropping out of selecting because somebody
+   * typed a letter would be irritating. A chip change is different: the action
+   * itself can flip from delete to restore, and a member may lose the right to
+   * select at all.
+   */
+  watch(filter, () => {
+    selecting.value = false;
+  });
 
   /**
    * The only thing the page reaches in for. The dialog and its reload stay here
@@ -511,7 +680,6 @@
           class="w-44"
           density="compact"
           hide-details
-          
           item-title="title"
           item-value="value"
           :items="sortOptions"
@@ -534,6 +702,24 @@
             replaceQuery({ sort_order: sortOrder === 'asc' ? 'desc' : 'asc' })
           "
         />
+
+        <!--
+          Hidden where the caller could not act on anything anyway: a member on
+          All is looking at teammates' images. See canSelect.
+        -->
+        <v-btn
+          v-if="canSelect"
+          :color="selecting ? 'primary' : 'tertiary'"
+          :icon="
+            selecting
+              ? 'mdi-checkbox-multiple-marked'
+              : 'mdi-checkbox-multiple-marked-outline'
+          "
+          size="small"
+          :title="t('documents.select')"
+          variant="text"
+          @click="toggleSelecting"
+        />
       </div>
     </div>
 
@@ -550,6 +736,38 @@
     >
       {{ t("admin.images.trashedTitleNote") }}
     </v-alert>
+
+    <!--
+      The action follows the chip: rows on the trash chip can only be put back,
+      everywhere else they can only be binned. Restore fires straight away where
+      delete asks first, matching the admin screens — restoring is not
+      destructive.
+    -->
+    <div v-if="selected.length > 0" class="mt-3">
+      <v-btn
+        v-if="filter === 'trash'"
+        block
+        color="tertiary"
+        :loading="bulkInFlight ? 'on-tertiary' : false"
+        prepend-icon="mdi-restore"
+        variant="elevated"
+        @click="bulkRestore"
+      >
+        {{ t("admin.images.restoreSelected", { count: selected.length }) }}
+      </v-btn>
+
+      <v-btn
+        v-else
+        block
+        color="error"
+        :loading="bulkInFlight"
+        prepend-icon="mdi-delete"
+        variant="elevated"
+        @click="bulkDeleteOpen = true"
+      >
+        {{ t("admin.images.deleteSelected", { count: selected.length }) }}
+      </v-btn>
+    </div>
 
     <v-progress-linear v-if="loading" class="mt-4" indeterminate />
 
@@ -579,7 +797,17 @@
           sm="6"
           xl="2"
         >
-          <v-card class="flex flex-col h-full" @click="openDetail(image)">
+          <!--
+            The ring is what makes a pick visible without reading the checkbox
+            itself, which is small and sits over a busy thumbnail.
+          -->
+          <v-card
+            class="flex flex-col h-full"
+            :class="
+              selected.includes(image.id) ? 'ring-2 ring-tertiary' : undefined
+            "
+            @click="onCardClick(image)"
+          >
             <!--
               flex-none is load-bearing: .v-img ships flex: 1 0 auto, so inside the
               card's flex column it grows to absorb whatever height the row's
@@ -593,6 +821,25 @@
               cover
               :src="image.thumb_url"
             >
+              <!--
+                .stop is load-bearing: the card itself opens the detail dialog,
+                so without it picking would also open the image. Same reason as
+                the restore button further down.
+
+                Pinned to the inline end, so it follows direction like every
+                other affordance here — the right corner in English, the left
+                in Arabic.
+              -->
+              <v-checkbox-btn
+                v-if="selecting && canPick(image)"
+                base-color="tertiary"
+                class="absolute top-1 inset-e-1 rounded bg-surface-darken-3"
+                color="tertiary"
+                density="comfortable"
+                :model-value="selected.includes(image.id)"
+                @click.stop="togglePick(image)"
+              />
+
               <template #placeholder>
                 <div class="flex items-center justify-center h-full">
                   <v-progress-circular indeterminate />
@@ -666,11 +913,16 @@
                 </p>
 
                 <!--
-                  .stop is load-bearing: the card itself opens the detail
-                  dialog, so without it restoring would also open the image.
+                  Gone while selecting: the whole card is a selection target
+                  then, so a button that did something else would be a hole in
+                  it. Bulk restore is right there in the bar instead.
+
+                  .stop is load-bearing outside select mode: the card itself
+                  opens the detail dialog, so without it restoring would also
+                  open the image.
                 -->
                 <v-btn
-                  v-if="filter === 'trash'"
+                  v-if="filter === 'trash' && !selecting"
                   color="tertiary"
                   density="comfortable"
                   icon="mdi-restore"
@@ -704,6 +956,15 @@
       :image="selectedImage"
       @deleted="onDeleted"
       @updated="onUpdated"
+    />
+
+    <ConfirmDialog
+      v-model="bulkDeleteOpen"
+      confirm-icon="mdi-delete"
+      :confirm-label="t('common.delete')"
+      :loading="bulkInFlight"
+      :message="t('admin.images.bulkDeleteConfirm', { count: selected.length })"
+      @confirm="bulkDestroy"
     />
 
     <ImageCreateDialog

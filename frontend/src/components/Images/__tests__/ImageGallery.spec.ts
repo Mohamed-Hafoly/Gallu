@@ -12,18 +12,26 @@ vi.mock("@/plugins/axios", () => ({
 
 // The store is stubbed rather than driven through axios: the point of these
 // cases is which arguments the component passes, not how the store serialises.
-const { fetchImages, fetchImagePage, restoreImage } = vi.hoisted(() => ({
-  fetchImages: vi.fn(),
-  fetchImagePage: vi.fn(),
-  restoreImage: vi.fn(),
-}));
+const { fetchImages, fetchImagePage, restoreImage, deleteImage } = vi.hoisted(
+  () => ({
+    fetchImages: vi.fn(),
+    fetchImagePage: vi.fn(),
+    restoreImage: vi.fn(),
+    deleteImage: vi.fn(),
+  }),
+);
 
 // The image detail dialog reads the auth store, which imports the real
 // router module — building a router here would blow up on its HMR hook.
 vi.mock("@/plugins/router", () => ({ default: { replace: vi.fn() } }));
 
 vi.mock("@/stores/image", () => ({
-  useImageStore: () => ({ fetchImages, fetchImagePage, restoreImage }),
+  useImageStore: () => ({
+    fetchImages,
+    fetchImagePage,
+    restoreImage,
+    deleteImage,
+  }),
 }));
 
 /**
@@ -64,6 +72,7 @@ beforeEach(() => {
 
   fetchImages.mockResolvedValue([]);
   restoreImage.mockResolvedValue(undefined);
+  deleteImage.mockResolvedValue(undefined);
   feedQueue = [];
   idleTotal = 0;
 
@@ -156,8 +165,33 @@ function countCalls() {
     .filter((params) => params.per_page === 1);
 }
 
-function mountGallery(props: Record<string, unknown> = {}) {
-  return mountWithPlugins(ImageGallery, { props });
+/** Selection is role-gated, so specs that touch it seed a signed-in user. */
+function makeUser(role: "super-admin" | "admin" | "member") {
+  return {
+    id: 7,
+    name: "Grace Hopper",
+    email: "grace@example.com",
+    avatar_url: "/avatar.jpg",
+    avatar_thumb_url: "/avatar.jpg",
+    has_avatar: false,
+    default_avatar_url: "/avatar.jpg",
+    created_at: "2026-08-01T10:00:00Z",
+    updated_at: "2026-08-15T10:00:00Z",
+    is_super_admin: role === "super-admin",
+    role,
+    team: role === "super-admin" ? null : { id: 1, name: "Design" },
+  };
+}
+
+function mountGallery(
+  props: Record<string, unknown> = {},
+  role?: "super-admin" | "admin" | "member",
+) {
+  return mountWithPlugins(
+    ImageGallery,
+    { props },
+    role ? { auth: { user: makeUser(role) } } : undefined,
+  );
 }
 
 describe("ImageGallery", () => {
@@ -679,5 +713,293 @@ describe("card timestamp", () => {
 
     expect(cardText(wrapper)).toContain("deleted 5 days ago");
     expect(cardText(wrapper)).not.toContain("last updated");
+  });
+});
+
+/**
+ * Mirrors the admin tables' bulk flow — checkbox selection, a bar that appears
+ * once something is picked, a confirm for delete only, and a per-id fan-out
+ * that reports how many failed.
+ *
+ * Who may select is role-gated: an admin anywhere, a member only where every
+ * row is theirs by construction (Yours, Recently deleted).
+ */
+describe("multi-select", () => {
+  const SELECT_ICON = "mdi-checkbox-multiple-marked-outline";
+
+  function toggle(wrapper: ReturnType<typeof mountGallery>) {
+    return wrapper
+      .findAllComponents({ name: "VBtn" })
+      .find((button) => String(button.props("icon")).startsWith(SELECT_ICON));
+  }
+
+  function checkboxes(wrapper: ReturnType<typeof mountGallery>) {
+    return wrapper.findAllComponents({ name: "VCheckboxBtn" });
+  }
+
+  /**
+   * Grid cards only. A plain VCard count would also pick up the confirm
+   * dialog's own card once it opens, which is exactly when these assert.
+   */
+  function cards(wrapper: ReturnType<typeof mountGallery>) {
+    return wrapper.findAll(".v-col .v-card");
+  }
+
+  function bulkButton(wrapper: ReturnType<typeof mountGallery>) {
+    return wrapper
+      .findAllComponents({ name: "VBtn" })
+      .find((button) =>
+        ["mdi-delete", "mdi-restore"].includes(
+          String(button.props("prependIcon")),
+        ),
+      );
+  }
+
+  /**
+   * The bulk confirm, told apart from the detail dialog's own single-delete
+   * ConfirmDialog by being the one that is actually open — findComponent would
+   * otherwise return whichever renders first.
+   */
+  async function confirmBulkDelete(wrapper: ReturnType<typeof mountGallery>) {
+    await bulkButton(wrapper)!.trigger("click");
+    await flushPromises();
+
+    const dialog = wrapper
+      .findAllComponents({ name: "ConfirmDialog" })
+      .find((d) => d.props("modelValue") === true)!;
+
+    dialog.vm.$emit("confirm");
+    await flushPromises();
+  }
+
+  /** Turns the mode on and picks the first `count` cards. */
+  async function pick(wrapper: ReturnType<typeof mountGallery>, count: number) {
+    await toggle(wrapper)!.trigger("click");
+    await flushPromises();
+
+    for (const box of checkboxes(wrapper).slice(0, count)) {
+      await box.trigger("click");
+    }
+
+    await flushPromises();
+  }
+
+  it("hides the toggle from a member on All", async () => {
+    const wrapper = mountGallery({ documentId: 7 }, "member");
+    await flushPromises();
+
+    expect(toggle(wrapper)).toBeUndefined();
+  });
+
+  it("offers a member the toggle on Yours and on the trash", async () => {
+    router.route!.query = { owner: "mine" };
+    const mine = mountGallery({ documentId: 7 }, "member");
+    await flushPromises();
+
+    expect(toggle(mine)).toBeDefined();
+
+    router.route!.query = { trashed: "only" };
+    const trash = mountGallery({ documentId: 7 }, "member");
+    await flushPromises();
+
+    expect(toggle(trash)).toBeDefined();
+  });
+
+  it("offers an admin the toggle on All", async () => {
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+
+    expect(toggle(wrapper)).toBeDefined();
+  });
+
+  it("shows no checkboxes and no bar until the mode is on", async () => {
+    feedQueue = [page([1, 2], 1)];
+
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+
+    expect(checkboxes(wrapper)).toHaveLength(0);
+    expect(bulkButton(wrapper)).toBeUndefined();
+
+    await toggle(wrapper)!.trigger("click");
+    await flushPromises();
+
+    expect(checkboxes(wrapper)).toHaveLength(2);
+    // A checkbox each, but nothing picked yet.
+    expect(bulkButton(wrapper)).toBeUndefined();
+  });
+
+  /**
+   * The load-bearing difference from the admin tables: they reload after a bulk
+   * run, which would throw away every page scrolled so far here.
+   */
+  it("deletes each picked id and splices them out without refetching", async () => {
+    feedQueue = [page([1, 2, 3], 1)];
+
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+    await pick(wrapper, 2);
+
+    const before = feedCalls().length;
+
+    await confirmBulkDelete(wrapper);
+
+    expect(deleteImage).toHaveBeenCalledTimes(2);
+    expect(deleteImage).toHaveBeenCalledWith(1);
+    expect(deleteImage).toHaveBeenCalledWith(2);
+    expect(cards(wrapper)).toHaveLength(1);
+    expect(feedCalls()).toHaveLength(before);
+  });
+
+  // A row that failed is still on screen — only the ones that went through go.
+  it("reports the failure count and keeps the rows that failed", async () => {
+    feedQueue = [page([1, 2], 1)];
+    deleteImage.mockImplementation((id: number) =>
+      id === 1 ? Promise.reject(new Error("403")) : Promise.resolve(undefined),
+    );
+
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+    await pick(wrapper, 2);
+
+    await confirmBulkDelete(wrapper);
+
+    expect(cards(wrapper)).toHaveLength(1);
+  });
+
+  // Restoring is not destructive, so it fires straight away.
+  it("restores on the trash chip with no confirmation", async () => {
+    router.route!.query = { trashed: "only" };
+    feedQueue = [page([1, 2], 1)];
+
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+    await pick(wrapper, 2);
+
+    expect(bulkButton(wrapper)!.props("prependIcon")).toBe("mdi-restore");
+
+    await bulkButton(wrapper)!.trigger("click");
+    await flushPromises();
+
+    expect(restoreImage).toHaveBeenCalledTimes(2);
+    expect(deleteImage).not.toHaveBeenCalled();
+  });
+
+  it("drops the selection and the mode when the chip changes", async () => {
+    feedQueue = [page([1, 2], 1), page([3], 1)];
+
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+    await pick(wrapper, 1);
+
+    expect(bulkButton(wrapper)).toBeDefined();
+
+    wrapper.findComponent({ name: "VChipGroup" }).vm.$emit("update:modelValue", "mine");
+    await flushPromises();
+
+    expect(bulkButton(wrapper)).toBeUndefined();
+    expect(checkboxes(wrapper)).toHaveLength(0);
+  });
+});
+
+/**
+ * In select mode the card *is* the checkbox: clicking anywhere on it picks,
+ * rather than opening the image or restoring it.
+ */
+describe("card click in select mode", () => {
+  function cards(wrapper: ReturnType<typeof mountGallery>) {
+    return wrapper.findAll(".v-col .v-card");
+  }
+
+  function detailDialog(wrapper: ReturnType<typeof mountGallery>) {
+    return wrapper.findComponent({ name: "ImageDetailDialog" });
+  }
+
+  async function startSelecting(wrapper: ReturnType<typeof mountGallery>) {
+    const toggle = wrapper
+      .findAllComponents({ name: "VBtn" })
+      .find((button) =>
+        String(button.props("icon")).startsWith(
+          "mdi-checkbox-multiple-marked-outline",
+        ),
+      )!;
+
+    await toggle.trigger("click");
+    await flushPromises();
+  }
+
+  it("opens the image when the mode is off", async () => {
+    feedQueue = [page([1], 1)];
+
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+
+    await cards(wrapper)[0]!.trigger("click");
+    await flushPromises();
+
+    expect(detailDialog(wrapper).props("modelValue")).toBe(true);
+  });
+
+  it("picks instead of opening once the mode is on", async () => {
+    feedQueue = [page([1, 2], 1)];
+
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+    await startSelecting(wrapper);
+
+    await cards(wrapper)[0]!.trigger("click");
+    await flushPromises();
+
+    expect(detailDialog(wrapper).props("modelValue")).toBe(false);
+    expect(wrapper.findAll(".v-col .v-card.ring-2")).toHaveLength(1);
+  });
+
+  it("unpicks a second click", async () => {
+    feedQueue = [page([1], 1)];
+
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+    await startSelecting(wrapper);
+
+    await cards(wrapper)[0]!.trigger("click");
+    await flushPromises();
+    await cards(wrapper)[0]!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.findAll(".v-col .v-card.ring-2")).toHaveLength(0);
+  });
+
+  // Nothing on the card may do something other than select while the mode is on.
+  it("hides the per-card restore button while selecting", async () => {
+    router.route!.query = { trashed: "only" };
+    feedQueue = [page([1], 1)];
+
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+
+    const restoreIcon = () =>
+      wrapper
+        .findAllComponents({ name: "VBtn" })
+        .some((button) => button.props("icon") === "mdi-restore");
+
+    expect(restoreIcon()).toBe(true);
+
+    await startSelecting(wrapper);
+
+    expect(restoreIcon()).toBe(false);
+  });
+
+  // The checkbox stops propagation, so a click there must not toggle twice.
+  it("toggles once when the checkbox itself is clicked", async () => {
+    feedQueue = [page([1], 1)];
+
+    const wrapper = mountGallery({ documentId: 7 }, "admin");
+    await flushPromises();
+    await startSelecting(wrapper);
+
+    await wrapper.findComponent({ name: "VCheckboxBtn" }).trigger("click");
+    await flushPromises();
+
+    expect(wrapper.findAll(".v-col .v-card.ring-2")).toHaveLength(1);
   });
 });

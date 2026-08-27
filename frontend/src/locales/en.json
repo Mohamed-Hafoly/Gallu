@@ -257,7 +257,8 @@
     "restored": "Image restored",
     "searchImages": "Search images by title, description or creator",
     "sortBy": "Sort by",
-    "sortDirection": "Sort direction"
+    "sortDirection": "Sort direction",
+    "select": "Select images"
   },
   "profile": {
     "title": "Profile Information",
