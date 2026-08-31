@@ -121,7 +121,7 @@ function doc(
     images,
     images_count: imagesCount,
     creator: "Ada Lovelace",
-    team: { id: 1, name: "Design" },
+    team: { id: 1, name: "Design", deleted_at: null },
     created_at: "2026-08-24T10:00:00.000000Z",
     updated_at: "2026-08-24T10:00:00.000000Z",
     deleted_at: null,
@@ -364,7 +364,7 @@ describe("document affordances", () => {
   // An admin only ever sees their own team's documents, so this cannot happen
   // through the listing — but the check is what keeps that true.
   it("hides edit on another teams document", async () => {
-    const theirs = doc([], 0, { team: { id: 99, name: "Other" } });
+    const theirs = doc([], 0, { team: { id: 99, name: "Other", deleted_at: null } });
     const wrapper = await mountIndex(theirs, makeUser("admin"));
 
     expect(editButtons(wrapper)).toHaveLength(0);
@@ -599,6 +599,68 @@ describe("bulk selection", () => {
 
     expect(restoreDocument).toHaveBeenCalledExactlyOnceWith(1);
     expect(wrapper.text()).not.toContain("Trip");
+  });
+
+  /**
+   * A live document can no longer have a trashed team, so a non-null
+   * team.deleted_at means this card is waiting for its team to come back — its
+   * own restore would be a 409, and the team's restore empties its whole bin.
+   */
+  describe("waiting on a trashed team", () => {
+    const BINNED_TEAM = {
+      id: 1,
+      name: "Design",
+      deleted_at: "2026-08-30T10:00:00.000000Z",
+    };
+
+    function inTheTrash(overrides: Partial<Document> = {}) {
+      return doc([], 0, {
+        deleted_at: "2026-08-25T10:00:00.000000Z",
+        ...overrides,
+      });
+    }
+
+    it("disables the card's restore button and names the team", async () => {
+      router.route!.query = { trashed: "only" };
+      const wrapper = await mountWith(
+        [inTheTrash({ team: BINNED_TEAM })],
+        makeUser("admin"),
+      );
+
+      const restore = wrapper
+        .findAllComponents({ name: "VBtn" })
+        .find((button) => button.find(".mdi-restore").exists())!;
+
+      expect(restore.attributes("disabled")).toBeDefined();
+      expect(restore.attributes("title")).toContain("Design");
+      // The chip is what explains the disabled button on the card itself.
+      expect(wrapper.find(".mdi-delete-clock").exists()).toBe(true);
+    });
+
+    // canPick() refuses it, so the checkbox never appears and the bulk restore
+    // can never be handed an id the endpoint would refuse.
+    it("cannot be picked for a bulk restore", async () => {
+      router.route!.query = { trashed: "only" };
+      const wrapper = await mountWith(
+        [inTheTrash({ team: BINNED_TEAM })],
+        makeUser("admin"),
+      );
+
+      await startSelecting(wrapper);
+
+      // No checkbox at all, which is what canPick() controls — clicking the
+      // card in select mode falls through to opening it, as it does for any
+      // other unpickable card.
+      expect(
+        wrapper.findComponent({ name: "VCheckboxBtn" }).exists(),
+      ).toBe(false);
+
+      await pickFirst(wrapper);
+      wrapper.findComponent({ name: "BulkActionBar" }).vm.$emit("restore");
+      await flushPromises();
+
+      expect(restoreDocument).not.toHaveBeenCalled();
+    });
   });
 
   // allSettled, not all: one rejection must not abandon the rest, and only the

@@ -53,8 +53,8 @@
 <template>
   <div class="flex flex-col gap-7">
     <!--
-      Styled to match /admin/images so the screens read as one app; the server
-      variant takes no `:search` prop, the term rides in the request.
+      Styled to match the admin tables' search so the screens read as one app;
+      this one takes no `:search` prop, the term rides in the request.
     -->
     <v-text-field
       v-model="searchInput"

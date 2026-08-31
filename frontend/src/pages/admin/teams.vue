@@ -208,7 +208,7 @@
 </script>
 
 <template>
-  <v-container class="bg-surface-darken-3" fluid>
+  <v-container fluid>
     <v-text-field
       v-model="search"
       bg-color="surface-darken-2"
@@ -430,7 +430,13 @@
       confirm-icon="mdi-delete"
       :confirm-label="t('common.delete')"
       :loading="deletingInFlight"
-      :message="t('admin.teams.deleteConfirm', { name: deleting?.name ?? '' })"
+      :message="
+        t('admin.teams.deleteConfirm', {
+          name: deleting?.name ?? '',
+          // Live documents only, which is exactly the set the delete bins.
+          count: deleting?.documents_count ?? 0,
+        })
+      "
       @confirm="destroy"
     />
 

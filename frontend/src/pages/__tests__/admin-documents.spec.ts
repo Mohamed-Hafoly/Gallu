@@ -52,7 +52,7 @@ function document_(id: number, overrides: Partial<Document> = {}): Document {
     description: null,
     images_count: 0,
     creator: "Ada Lovelace",
-    team: { id: 1, name: "Design" },
+    team: { id: 1, name: "Design", deleted_at: null },
     created_at: "2026-08-24T10:00:00.000000Z",
     updated_at: "2026-08-24T10:00:00.000000Z",
     deleted_at: null,
@@ -253,6 +253,82 @@ describe("trashed table", () => {
     expect(restoreDocument).toHaveBeenCalledWith(1);
     // Both, because a restore moves the row from one table to the other.
     expect(liveFetches()).toBe(before + 1);
+  });
+});
+
+/**
+ * A live document can no longer have a trashed team — Team::booted() takes them
+ * down with it — so a non-null team.deleted_at means this row is waiting for its
+ * team to come back, and its own restore would be a 409.
+ */
+describe("a document whose team is trashed", () => {
+  const BINNED_TEAM = {
+    id: 1,
+    name: "Design",
+    deleted_at: "2026-08-30T10:00:00.000000Z",
+  };
+
+  /** Live rows keep their live team; the trash serves rows waiting on theirs. */
+  function withBlockedTrash() {
+    fetchDocumentPage.mockImplementation((params: DocumentListParams) =>
+      Promise.resolve({
+        items:
+          params.trashed === "only"
+            ? [
+              document_(4, {
+                team: BINNED_TEAM,
+                deleted_at: "2026-08-30T10:00:00.000000Z",
+              }),
+              document_(5, { deleted_at: "2026-08-30T10:00:00.000000Z" }),
+            ]
+            : [document_(1)],
+        total: 2,
+      }),
+    );
+  }
+
+  it("disables its restore button and says which team to restore", async () => {
+    withBlockedTrash();
+    const wrapper = await mountPage();
+
+    const rows = trashTable(wrapper).findAll("tbody tr");
+    const blocked = rowButton(rows[0], ".mdi-restore");
+    const allowed = rowButton(rows[1], ".mdi-restore");
+
+    expect(blocked.attributes("disabled")).toBeDefined();
+    expect(blocked.attributes("title")).toContain("Design");
+    expect(allowed.attributes("disabled")).toBeUndefined();
+  });
+
+  // Not just cosmetic on the button: the row must not be selectable either, or
+  // a bulk restore would send a request that can only come back 409.
+  it("refuses to bulk restore it, while restoring the rest", async () => {
+    withBlockedTrash();
+    const wrapper = await mountPage();
+
+    trashTable(wrapper).vm.$emit("update:modelValue", [4, 5]);
+    await flushPromises();
+
+    const restoreSelected = wrapper
+      .findAllComponents({ name: "VBtn" })
+      .find((button) => button.text().includes("Restore selected"))!;
+    await restoreSelected.trigger("click");
+    await flushPromises();
+
+    expect(restoreDocument).toHaveBeenCalledTimes(1);
+    expect(restoreDocument).toHaveBeenCalledWith(5);
+  });
+
+  // The name is served through withTrashed(), so the cell explains the disabled
+  // button rather than showing the "-" a scoped-away relation used to give.
+  it("names the trashed team in its own cell", async () => {
+    withBlockedTrash();
+    const wrapper = await mountPage();
+
+    const row = trashTable(wrapper).findAll("tbody tr")[0];
+
+    expect(row.find(".mdi-delete-clock").exists()).toBe(true);
+    expect(row.text()).toContain("Design");
   });
 });
 

@@ -59,6 +59,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'not-found': RouteRecordInfo<
+      'not-found',
+      '/:path(.*)',
+      { path: ParamValue<true> },
+      { path: ParamValue<false> },
+      | never
+    >,
     'admin-categories': RouteRecordInfo<
       'admin-categories',
       '/admin/categories',
@@ -69,13 +76,6 @@ declare module 'vue-router/auto-routes' {
     'admin-documents': RouteRecordInfo<
       'admin-documents',
       '/admin/documents',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    'admin-images': RouteRecordInfo<
-      'admin-images',
-      '/admin/images',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -106,13 +106,6 @@ declare module 'vue-router/auto-routes' {
       '/documents/:id',
       { id: ParamValue<true> },
       { id: ParamValue<false> },
-      | never
-    >,
-    'gallery': RouteRecordInfo<
-      'gallery',
-      '/gallery',
-      Record<never, never>,
-      Record<never, never>,
       | never
     >,
     'settings': RouteRecordInfo<
@@ -167,6 +160,14 @@ declare module 'vue-router/auto-routes' {
       pathParamNames:
         | never
     }
+    'src/pages/[...path].vue': {
+      routes:
+        | 'not-found'
+      views:
+        | never
+      pathParamNames:
+        | 'path'
+    }
     'src/pages/admin/categories.vue': {
       routes:
         | 'admin-categories'
@@ -178,14 +179,6 @@ declare module 'vue-router/auto-routes' {
     'src/pages/admin/documents.vue': {
       routes:
         | 'admin-documents'
-      views:
-        | never
-      pathParamNames:
-        | never
-    }
-    'src/pages/admin/images.vue': {
-      routes:
-        | 'admin-images'
       views:
         | never
       pathParamNames:
@@ -222,14 +215,6 @@ declare module 'vue-router/auto-routes' {
         | never
       pathParamNames:
         | 'id'
-    }
-    'src/pages/gallery/index.vue': {
-      routes:
-        | 'gallery'
-      views:
-        | never
-      pathParamNames:
-        | never
     }
     'src/pages/settings.vue': {
       routes:

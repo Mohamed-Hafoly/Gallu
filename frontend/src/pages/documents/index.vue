@@ -169,12 +169,28 @@
   ]);
 
   /**
+   * Whether this card's team is in the bin too, which is what makes its restore
+   * a 409: a live document always has a live team, so the team has to come back
+   * first — and it empties its whole bin when it does, so there is nothing left
+   * to do here afterwards.
+   *
+   * Read off the team's own deleted_at, which the listing serves through
+   * withTrashed(). How this document came to be in the bin makes no difference.
+   */
+  function teamTrashed(document_: Document) {
+    return document_.team?.deleted_at != null;
+  }
+
+  /**
    * Whether one card may be picked. isAdmin already guarantees this in every
-   * reachable state — the toggle is only offered to admins — and restore needs
-   * no check at all, since the trashed listing is already team-scoped.
+   * reachable state — the toggle is only offered to admins — and the trashed
+   * listing is already team-scoped, so the only extra rule in the trash is that
+   * a document waiting on its team cannot be bulk-restored.
    */
   function canPick(document_: Document) {
-    return filter.value === "trash" || canDelete(document_);
+    return filter.value === "trash"
+      ? !teamTrashed(document_)
+      : canDelete(document_);
   }
 
   /**
@@ -402,7 +418,7 @@
 </script>
 
 <template>
-  <v-container class="flex flex-col gap-7 pt-7 bg-surface-darken-3" fluid>
+  <v-container class="flex flex-col gap-7 pt-7" fluid>
     <!--
       Above the three branches below, not inside one: loading, empty and the
       grid are mutually exclusive, so a button placed in any of them would
@@ -662,6 +678,20 @@
                 always matches the UI and its direction is already the
                 element's. Only user-supplied text can disagree.
               -->
+              <!-- Only in the trash, and only when the team is what the card
+                   is waiting on: elsewhere the team is not the card's subject. -->
+              <v-chip
+                v-if="filter === 'trash' && teamTrashed(doc)"
+                class="mt-3 self-start"
+                color="error"
+                size="small"
+                variant="tonal"
+              >
+                <v-icon icon="mdi-delete-clock" start />
+
+                <span class="bidi-auto">{{ doc.team?.name }}</span>
+              </v-chip>
+
               <div class="mt-auto pt-4 flex items-center justify-between gap-2">
                 <p class="text-sm text-start opacity-70">
                   {{ cardTimestamp(doc) }}
@@ -675,13 +705,25 @@
                   .stop is load-bearing outside select mode: the card itself
                   navigates into the document.
                 -->
+                <!-- Disabled while the document's team is in the bin: the
+                     endpoint answers 409 there, so an enabled button could only
+                     ever produce an error. The title says which team to restore
+                     first. Cosmetic, as everywhere else — the guard in
+                     DocumentController::restore is what refuses. -->
                 <v-btn
                   v-if="filter === 'trash' && !selecting"
                   color="tertiary"
                   density="comfortable"
+                  :disabled="teamTrashed(doc)"
                   icon="mdi-restore"
                   size="small"
-                  :title="t('documents.restoreDocument')"
+                  :title="
+                    teamTrashed(doc)
+                      ? t('admin.documents.restoreBlocked', {
+                        team: doc.team?.name,
+                      })
+                      : t('documents.restoreDocument')
+                  "
                   variant="text"
                   @click.stop="restore(doc)"
                 />

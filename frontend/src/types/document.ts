@@ -22,8 +22,14 @@ export interface Document {
   /**
    * Nullable the way User["team"] is: a document created before the team became
    * required belongs to none.
+   *
+   * The team is served through withTrashed() on the listings, so a document
+   * that went down with its team still names it. `deleted_at` is what tells the
+   * two apart, and the only signal the SPA has that an individual restore would
+   * be refused: a live document can no longer have a trashed team, so a non-null
+   * value here means this row waits for its team to come back.
    */
-  team: { id: number; name: string } | null;
+  team: { id: number; name: string; deleted_at: string | null } | null;
   created_at: string;
   updated_at: string;
   /** Null for a live document; set once it is soft-deleted. */

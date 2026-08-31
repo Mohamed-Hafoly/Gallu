@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 describe("signed-out visitors", () => {
-  it.each(["gallery", "profile", "settings", "home"])(
+  it.each(["documents", "profile", "settings", "home"])(
     "are redirected from %s to login",
     (name) => {
       expect(guard(name)).toEqual({ name: "login" });
@@ -49,7 +49,7 @@ describe("signed-in visitors", () => {
     expect(guard(name)).toEqual({ name: "home" });
   });
 
-  it.each(["gallery", "profile", "settings", "home"])(
+  it.each(["documents", "profile", "settings", "home"])(
     "may reach the protected route %s",
     (name) => {
       expect(guard(name)).toBeUndefined();
@@ -60,6 +60,35 @@ describe("signed-in visitors", () => {
 describe("unknown routes", () => {
   it("still gate behind auth when signed out", () => {
     expect(guard("does-not-exist")).toEqual({ name: "login" });
+  });
+
+  /**
+   * The catch-all page is not in publicRoutes, deliberately: every screen in
+   * this app needs a session, so a signed-out visitor belongs at login rather
+   * than being told which page is missing.
+   */
+  it("send a signed-out visitor to login rather than the 404 page", () => {
+    expect(guard("not-found", "/nonsense")).toEqual({ name: "login" });
+  });
+
+  it("let a signed-in visitor reach the 404 page", () => {
+    useAuthStore().user = user as never;
+
+    expect(guard("not-found", "/nonsense")).toBeUndefined();
+  });
+
+  // The admin rule reads the path, so it fires whether or not the path exists —
+  // a mistyped admin URL is refused before it can report itself missing.
+  it("send a signed-in non-admin home from an unknown admin path", () => {
+    useAuthStore().user = user as never;
+
+    expect(guard("not-found", "/admin/nonsense")).toEqual({ name: "home" });
+  });
+
+  it("let a super admin see the 404 under admin", () => {
+    useAuthStore().user = superAdmin as never;
+
+    expect(guard("not-found", "/admin/nonsense")).toBeUndefined();
   });
 });
 

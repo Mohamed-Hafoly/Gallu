@@ -27,28 +27,6 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("fetchImages", () => {
-  it("unwraps the resource collection's data envelope", async () => {
-    const images = [{ id: 1, title: "One" }];
-    mockedApi.get.mockResolvedValue({ data: { data: images } });
-
-    await expect(useImageStore().fetchImages()).resolves.toEqual(images);
-    expect(mockedApi.get).toHaveBeenCalledWith("/api/images", { params: {} });
-  });
-
-  // /documents/[id] passes its route param through; the backend applies it
-  // after the team scope, so it narrows and can never widen.
-  it("sends document_id when scoping to one document", async () => {
-    mockedApi.get.mockResolvedValue({ data: { data: [] } });
-
-    await useImageStore().fetchImages(7);
-
-    expect(mockedApi.get).toHaveBeenCalledWith("/api/images", {
-      params: { document_id: 7 },
-    });
-  });
-});
-
 describe("createImage", () => {
   it("POSTs multipart fields matching StoreImageRequest", async () => {
     mockedApi.post.mockResolvedValue({ data: { data: { id: 1 } } });

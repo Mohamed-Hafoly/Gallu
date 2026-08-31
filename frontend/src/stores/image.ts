@@ -51,35 +51,18 @@ interface UpdateImagePayload {
 
 export const useImageStore = defineStore("image", () => {
   /**
-   * Every image the caller may see, or just one document's when an id is given.
-   * The filter narrows server-side and is applied after the team scope, so an
-   * id from another team yields an empty list rather than a leak.
-   */
-  async function fetchImages(documentId?: number) {
-    const { data } = await api.get("/api/images", {
-      params: documentId === undefined ? {} : { document_id: documentId },
-    });
-    return data.data as Image[];
-  }
-
-  /**
-   * One page of a server-paginated listing. Unlike fetchImages() this pages,
-   * sorts and searches server-side, so the total has to come back alongside the
-   * rows - same shape as fetchUsers in stores/user.ts.
+   * One page of the document page's infinite-scrolled feed. Pages, sorts and
+   * searches server-side, so the total has to come back alongside the rows -
+   * same shape as fetchUsers in stores/user.ts. It sends
+   * document_id/page/per_page, plus `owner` only when narrowing.
    *
-   * Three callers: the admin screen's two tables, and the document page's
-   * infinite-scrolled feed, which sends document_id/page/per_page plus `owner`
-   * only when narrowing.
+   * `trashed` is what makes the "Recently deleted" chip its own listing rather
+   * than a filter over one array: the trash is a separate bucket, so All and
+   * Yours must keep sending nothing, or deleted rows leak into them.
    *
-   * `trashed` is what makes the admin screen's two tables two listings rather
-   * than one filtered array: the live table sends nothing, the pending-deletion
-   * table sends "only". The document page's "Recently deleted" chip sends
-   * "only" too — the trash is a separate bucket, so All and Yours must keep
-   * sending nothing or deleted rows leak into them.
-   *
-   * No longer a 403 for a member: the backend scopes a trashed listing to the
+   * Not a 403 for a member: the backend scopes a trashed listing to the
    * caller's own images rather than refusing it, so everyone has a trash and it
-   * is simply smaller for some. /gallery still never sends it.
+   * is simply smaller for some.
    */
   async function fetchImagePage(params: ImageListParams): Promise<ImagePage> {
     const { data } = await api.get("/api/images", { params });
@@ -126,7 +109,6 @@ export const useImageStore = defineStore("image", () => {
   }
 
   return {
-    fetchImages,
     fetchImagePage,
     createImage,
     updateImage,

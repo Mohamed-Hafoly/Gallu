@@ -44,10 +44,9 @@
 
   /**
    * The live and pending-deletion tables are two independent listings, one
-   * request each, differing only in the `trashed` parameter — the same split
-   * admin/images.vue uses. They keep separate page and sort state, and both
-   * reload after any mutation, because a delete or restore moves a row from one
-   * to the other.
+   * request each, differing only in the `trashed` parameter. They keep separate
+   * page and sort state, and both reload after any mutation, because a delete
+   * or restore moves a row from one to the other.
    */
   const live = ref<TableState>(tableState());
   const trash = ref<TableState>(tableState());
@@ -64,6 +63,20 @@
   const bulkInFlight = ref(false);
   const restoringId = ref<number | null>(null);
   const createOpen = ref(false);
+
+  /**
+   * Whether this row's team is in the bin too, which is what makes its restore
+   * a 409: a live document always has a live team, so the team has to come back
+   * first — and it brings its documents with it, so there is nothing to do here
+   * afterwards.
+   *
+   * Read off the team's own deleted_at rather than a flag of the document's:
+   * the listing loads the team through withTrashed(), and a document trashed on
+   * its own whose team was binned afterwards is refused just the same.
+   */
+  function teamTrashed(document_: Document) {
+    return document_.team?.deleted_at != null;
+  }
 
   // Vuetify renders the sort arrow as a bare VIcon with no colour prop and no
   // slot of its own, so the only way to tint it is to reach it from the class
@@ -342,9 +355,18 @@
   }
 
   // No confirmation, unlike bulk delete: restoring is not destructive.
+  //
+  // Blocked rows are dropped rather than sent and counted as failures. The table
+  // already refuses to select them (see :item-selectable), so this only catches
+  // a row whose team was binned by somebody else between the load and the click
+  // — the 409 remains the real guard either way.
   async function bulkRestore() {
+    const restorable = trash.value.items
+      .filter((item) => trash.value.selected.includes(item.id) && !teamTrashed(item))
+      .map((item) => item.id);
+
     await runBulk(
-      [...trash.value.selected],
+      restorable,
       (id) => documentStore.restoreDocument(id),
       "admin.documents.bulkRestored",
       "admin.documents.bulkRestoreFailed",
@@ -353,7 +375,7 @@
 </script>
 
 <template>
-  <v-container class="bg-surface-darken-3" fluid>
+  <v-container fluid>
     <v-text-field
       v-model="search"
       bg-color="surface-darken-2"
@@ -486,6 +508,7 @@
       class="mt-8"
       :header-props="headerProps"
       :headers="trashedHeaders"
+      :item-selectable="(item: Document) => !teamTrashed(item)"
       :items="trash.items"
       :items-length="trash.total"
       :items-per-page="trash.itemsPerPage"
@@ -534,8 +557,25 @@
         {{ item.description || t("common.emptyValue") }}
       </template>
 
+      <!-- The team is loaded through withTrashed() here, so a document that
+           went down with its team still names it — and the marker is what
+           explains the disabled restore below. -->
       <template #item.team="{ item }">
-        {{ item.team?.name ?? t("common.emptyValue") }}
+        <span v-if="!teamTrashed(item)">
+          {{ item.team?.name ?? t("common.emptyValue") }}
+        </span>
+
+        <v-chip
+          v-else
+          color="error"
+          size="small"
+          :title="t('admin.documents.teamDeleted')"
+          variant="tonal"
+        >
+          <v-icon icon="mdi-delete-clock" start />
+
+          {{ item.team?.name }}
+        </v-chip>
       </template>
 
       <template #item.created_at="{ item }">
@@ -551,14 +591,24 @@
       </template>
 
       <!-- Restore only: the edit endpoint refuses a trashed row, and there is
-           no permanent delete. -->
+           no permanent delete.
+
+           Disabled while the team is in the bin, with the title saying why —
+           the endpoint answers 409 there, so an enabled button would only ever
+           produce an error. Cosmetic, as everywhere else in this app: the guard
+           in DocumentController::restore is what actually refuses. -->
       <template #item.actions="{ item }">
         <v-btn
           color="tertiary"
+          :disabled="teamTrashed(item)"
           icon="mdi-restore"
           :loading="restoringId === item.id"
           size="small"
-          :title="t('admin.documents.restore')"
+          :title="
+            teamTrashed(item)
+              ? t('admin.documents.restoreBlocked', { team: item.team?.name })
+              : t('admin.documents.restore')
+          "
           variant="text"
           @click="restore(item)"
         />

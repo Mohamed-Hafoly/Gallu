@@ -19,11 +19,6 @@ export function useNavLinks() {
       },
     },
     {
-      title: t("nav.gallery"),
-      value: "/gallery",
-      props: { to: { name: "gallery" }, prependIcon: "mdi-image-multiple" },
-    },
-    {
       title: t("nav.documents"),
       value: "/documents",
       props: { to: { name: "documents" }, prependIcon: "mdi-folder-multiple" },
@@ -51,9 +46,9 @@ export function useNavLinks() {
 
   const adminLinks = computed(() => [
     {
-      title: t("nav.backToGallery"),
-      value: "/gallery",
-      props: { to: { name: "gallery" }, prependIcon: "mdi-arrow-left" },
+      title: t("nav.backToDocuments"),
+      value: "/documents",
+      props: { to: { name: "documents" }, prependIcon: "mdi-arrow-left" },
     },
     {
       title: t("nav.users"),
@@ -74,14 +69,6 @@ export function useNavLinks() {
       props: {
         to: { name: "admin-documents" },
         prependIcon: "mdi-folder-multiple",
-      },
-    },
-    {
-      title: t("nav.images"),
-      value: "/admin/images",
-      props: {
-        to: { name: "admin-images" },
-        prependIcon: "mdi-image-multiple",
       },
     },
     {

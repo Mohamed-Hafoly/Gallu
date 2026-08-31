@@ -12,15 +12,15 @@
   import { useNotifierStore } from "@/stores/notifier";
 
   /**
-   * The images grid, shared by /gallery and /documents/[id].
+   * One document's images: an All/Yours/trash chip group over an
+   * infinite-scrolled listing paged server-side, with search, sort, selection
+   * and upload.
    *
-   * With a `documentId` it is the document's feed: an All/Yours chip pair and
-   * an infinite-scrolled listing paged server-side, and it can upload into the
-   * document. Without one it is the flat, read-only view of everything the
-   * caller may see — one request, no paging, no chips, and no upload button,
-   * since there is no document to attach an upload to.
+   * `documentId` is required. It used to be optional, because /gallery mounted
+   * this same component with no id for a flat read-only view across every
+   * document; that route is gone, and with it the second mode.
    */
-  const props = defineProps<{ documentId?: number }>();
+  const props = defineProps<{ documentId: number }>();
 
   /** Images fetched per scroll. */
   const PER_PAGE = 20;
@@ -214,9 +214,6 @@
    * A bare relative time is ambiguous once it can mean two things, so the
    * label travels with it: "last updated 3 hours ago" normally, "deleted 3
    * hours ago" in the trash, where the card shows deleted_at instead.
-   *
-   * `filter` is "all" on /gallery, which has no chips, so that path lands on
-   * updated_at without needing a documentId check.
    */
   function cardTimestamp(image: Image) {
     const trashed = filter.value === "trash";
@@ -303,16 +300,6 @@
     });
   }
 
-  /** The flat /gallery listing: everything the caller may see, in one request. */
-  async function fetchAll() {
-    loading.value = true;
-    try {
-      images.value = await imageStore.fetchImages(props.documentId);
-    } finally {
-      loading.value = false;
-    }
-  }
-
   /**
    * One page of the document's feed. Page 1 replaces the list, later pages
    * append to it — which is also what makes a chip switch a plain reset rather
@@ -382,8 +369,6 @@
   }
 
   function reload() {
-    if (props.documentId === undefined) return fetchAll();
-
     page.value = 1;
     lastPage.value = 1;
 
@@ -443,12 +428,7 @@
 
 <template>
   <div class="flex flex-col gap-6">
-    <!--
-      Only inside a document — /gallery has no owner axis, since it is already
-      everything the caller may see, and nothing there to search within.
-    -->
     <ListFilterBar
-      v-if="documentId !== undefined"
       v-model="filterChip"
       v-model:search="searchInput"
       :can-select="canSelect"
@@ -495,15 +475,11 @@
     />
 
     <!--
-      Only inside a document, like the filter row above it: /gallery renders no
-      ImageCreateDialog, having no document to attach an upload to, so the
-      button there would open nothing.
-
       Gone on the trash chip, where every row is already deleted and an upload
       would land in a listing that cannot show it.
     -->
     <v-btn
-      v-if="documentId !== undefined && filter !== 'trash'"
+      v-if="filter !== 'trash'"
       block
       class="-mb-4"
       color="tertiary"
@@ -602,7 +578,7 @@
               {{ image.title }}
             </v-card-title>
 
-            <v-card-subtitle class="ms-1">
+            <v-card-subtitle class="mr-1 ml-1">
               {{ image.creator }}
             </v-card-subtitle>
 
@@ -673,7 +649,7 @@
         leaving it to fire requests that would return nothing.
       -->
       <div
-        v-if="documentId !== undefined && page < lastPage"
+        v-if="page < lastPage"
         ref="sentinel"
         class="flex justify-center py-6"
       >
@@ -698,7 +674,6 @@
     />
 
     <ImageCreateDialog
-      v-if="documentId !== undefined"
       v-model="createOpen"
       :document-id="documentId"
       @created="onCreated"

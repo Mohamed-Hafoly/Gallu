@@ -42,7 +42,7 @@ const document_: Document = {
   description: "Numbers",
   images_count: 3,
   creator: "Ada Lovelace",
-  team: { id: 1, name: "Design" },
+  team: { id: 1, name: "Design", deleted_at: null },
   created_at: "2026-08-01T10:00:00.000000Z",
   updated_at: "2026-08-15T10:00:00.000000Z",
   deleted_at: null,

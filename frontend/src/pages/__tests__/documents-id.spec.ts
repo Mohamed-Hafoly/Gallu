@@ -38,7 +38,7 @@ vi.mock("@/stores/team", () => ({
   useTeamStore: () => ({ fetchPickerTeams }),
 }));
 
-const OWN_TEAM = { id: 1, name: "Design" };
+const OWN_TEAM = { id: 1, name: "Design", deleted_at: null };
 
 function makeUser(
   role: "super-admin" | "admin" | "member",
@@ -168,7 +168,7 @@ describe("edit affordance", () => {
   });
 
   it("hides it on another teams document", async () => {
-    const theirs = makeDocument({ team: { id: 99, name: "Other" } });
+    const theirs = makeDocument({ team: { id: 99, name: "Other", deleted_at: null } });
     const wrapper = await mountDetail(makeUser("admin"), theirs);
 
     expect(editButton(wrapper)).toBeUndefined();
@@ -254,7 +254,7 @@ describe("delete affordance", () => {
   });
 
   it("hides it on another teams document", async () => {
-    const theirs = makeDocument({ team: { id: 99, name: "Other" } });
+    const theirs = makeDocument({ team: { id: 99, name: "Other", deleted_at: null } });
 
     expect(deleteButton(await mountDetail(makeUser("admin"), theirs))).toBeUndefined();
   });

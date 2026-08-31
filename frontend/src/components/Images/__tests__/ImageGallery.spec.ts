@@ -12,26 +12,18 @@ vi.mock("@/plugins/axios", () => ({
 
 // The store is stubbed rather than driven through axios: the point of these
 // cases is which arguments the component passes, not how the store serialises.
-const { fetchImages, fetchImagePage, restoreImage, deleteImage } = vi.hoisted(
-  () => ({
-    fetchImages: vi.fn(),
-    fetchImagePage: vi.fn(),
-    restoreImage: vi.fn(),
-    deleteImage: vi.fn(),
-  }),
-);
+const { fetchImagePage, restoreImage, deleteImage } = vi.hoisted(() => ({
+  fetchImagePage: vi.fn(),
+  restoreImage: vi.fn(),
+  deleteImage: vi.fn(),
+}));
 
 // The image detail dialog reads the auth store, which imports the real
 // router module — building a router here would blow up on its HMR hook.
 vi.mock("@/plugins/router", () => ({ default: { replace: vi.fn() } }));
 
 vi.mock("@/stores/image", () => ({
-  useImageStore: () => ({
-    fetchImages,
-    fetchImagePage,
-    restoreImage,
-    deleteImage,
-  }),
+  useImageStore: () => ({ fetchImagePage, restoreImage, deleteImage }),
 }));
 
 /**
@@ -70,7 +62,6 @@ beforeEach(() => {
   intersect = null;
   observed = [];
 
-  fetchImages.mockResolvedValue([]);
   restoreImage.mockResolvedValue(undefined);
   deleteImage.mockResolvedValue(undefined);
   feedQueue = [];
@@ -184,7 +175,7 @@ function makeUser(role: "super-admin" | "admin" | "member") {
 }
 
 function mountGallery(
-  props: Record<string, unknown> = {},
+  props: { documentId: number } & Record<string, unknown>,
   role?: "super-admin" | "admin" | "member",
 ) {
   return mountWithPlugins(
@@ -195,31 +186,12 @@ function mountGallery(
 }
 
 describe("ImageGallery", () => {
-  // /gallery spans every document, so it has no filter row at all: no chips to
-  // narrow by owner, and no search or sort, since it is one unpaged request.
-  it("fetches everything at once when no document is given", async () => {
-    const wrapper = mountGallery();
-    await flushPromises();
-
-    expect(wrapper.findComponent({ name: "VTextField" }).exists()).toBe(false);
-    expect(fetchImages).toHaveBeenCalledWith(undefined);
-    expect(fetchImagePage).not.toHaveBeenCalled();
-  });
-
-  it("shows no owner chips outside a document", async () => {
-    const wrapper = mountGallery();
-    await flushPromises();
-
-    expect(wrapper.findComponent({ name: "VChipGroup" }).exists()).toBe(false);
-  });
-
-  // The upload button lives in the document header now, not here — this is
-  // only about the feed being paged rather than fetched whole.
-  it("pages the fetch inside a document", async () => {
+  // The feed is paged rather than fetched whole: one request for page one, and
+  // the rest arrive as the sentinel comes into view.
+  it("pages the fetch", async () => {
     mountGallery({ documentId: 7 });
     await flushPromises();
 
-    expect(fetchImages).not.toHaveBeenCalled();
     expect(feedCalls()).toEqual([{ ...FEED_DEFAULTS, page: 1 }]);
   });
 
@@ -648,15 +620,6 @@ describe("upload button", () => {
 
     expect(uploadButton(asMember)).toBeDefined();
     expect(uploadButton(asAdmin)).toBeDefined();
-  });
-
-  // /gallery renders no ImageCreateDialog, having no document to attach an
-  // upload to, so a button there would open nothing.
-  it("is absent outside a document", async () => {
-    const wrapper = mountGallery({}, "admin");
-    await flushPromises();
-
-    expect(uploadButton(wrapper)).toBeUndefined();
   });
 
   // Every row on that chip is already deleted; an upload would land in a

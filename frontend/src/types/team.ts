@@ -24,6 +24,12 @@ export interface Team {
   creator?: string | null;
   /** Only present on the admin listing, not on the picker. */
   members_count?: number;
+  /**
+   * Live documents only — exactly the set that goes to the bin with the team,
+   * which is what the delete confirmation says out loud. Admin listing only,
+   * like members_count.
+   */
+  documents_count?: number;
   created_at?: string | null;
   updated_at?: string | null;
   deleted_at?: string | null;

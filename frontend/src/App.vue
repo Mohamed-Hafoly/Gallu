@@ -22,7 +22,7 @@
       <the-nav v-model="drawer" />
     </template>
 
-    <v-main>
+    <v-main class="bg-surface-darken-3">
       <router-view />
     </v-main>
 

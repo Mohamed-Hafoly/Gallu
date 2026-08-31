@@ -80,7 +80,7 @@
 </script>
 
 <template>
-  <v-container class="pt-3 bg-surface-darken-3" fluid>
+  <v-container class="pt-3" fluid>
     <v-progress-linear v-if="loading" indeterminate />
 
     <p v-else-if="forbidden" class="mt-10 text-center text-error">
