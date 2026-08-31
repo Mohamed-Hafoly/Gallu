@@ -391,6 +391,69 @@ it('reports the role each user is presented as', function () {
         ->and($rows[$member->id]['role'])->toBe(RoleName::Member->value);
 });
 
+// `team` is not a column either: it sorts on the select alias
+// withTeamAssignment() adds, which holds the team's *name*.
+it('sorts by team name, with the team less last', function () {
+    $zulu = Team::factory()->create(['name' => 'Zulu']);
+    $alpha = Team::factory()->create(['name' => 'Alpha']);
+
+    $inZulu = User::factory()->create();
+    $inAlpha = User::factory()->create();
+    $inZulu->assignToTeam($zulu, RoleName::Member);
+    $inAlpha->assignToTeam($alpha, RoleName::Member);
+
+    // The super-admin belongs to no team, so it is the null row.
+    $admin = superAdmin();
+
+    $ascending = actingAs($admin)
+        ->getJson('/api/users?sort_by=team&sort_order=asc&per_page=-1')
+        ->assertOk()
+        ->json('data.*.id');
+
+    // Relative positions rather than the whole array: TeamFactory creates a
+    // user for each team's `user_id`, so the listing carries team-less rows
+    // this test never asked for.
+    $ascendingAt = array_flip($ascending);
+
+    // Alpha before Zulu — by name, not by the ids, which run the other way —
+    // and the team-less admin ahead of both, since null sorts first.
+    expect($ascendingAt[$inAlpha->id])->toBeLessThan($ascendingAt[$inZulu->id])
+        ->and($ascendingAt[$admin->id])->toBeLessThan($ascendingAt[$inAlpha->id]);
+
+    $descending = actingAs($admin)
+        ->getJson('/api/users?sort_by=team&sort_order=desc&per_page=-1')
+        ->assertOk()
+        ->json('data.*.id');
+
+    $descendingAt = array_flip($descending);
+
+    expect($descendingAt[$inZulu->id])->toBeLessThan($descendingAt[$inAlpha->id])
+        ->and($descendingAt[$inAlpha->id])->toBeLessThan($descendingAt[$admin->id]);
+});
+
+// A team name is shared by everyone in it, and LIMIT/OFFSET over a non-unique
+// key lets the database order ties differently per page — so without the id
+// tie-break the table repeats a row or skips one.
+it('does not repeat a user across pages when the team ties', function () {
+    $team = Team::factory()->create(['name' => 'Design']);
+
+    foreach (User::factory()->count(3)->create() as $member) {
+        $member->assignToTeam($team, RoleName::Member);
+    }
+
+    $admin = superAdmin();
+
+    $ids = [];
+    foreach ([1, 2, 3, 4] as $page) {
+        $ids[] = actingAs($admin)
+            ->getJson("/api/users?per_page=1&page={$page}&sort_by=team&sort_order=asc")
+            ->assertOk()
+            ->json('data.0.id');
+    }
+
+    expect($ids)->toHaveCount(4)->and(array_unique($ids))->toHaveCount(4);
+});
+
 // role is not a column on `users` — it resolves to the flag subquery, so it
 // needs its own coverage rather than riding the whitelist dataset above.
 it('sorts by role, putting super admins at one end', function () {

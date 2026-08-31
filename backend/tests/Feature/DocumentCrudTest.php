@@ -444,6 +444,51 @@ it('sorts by creator, which is not a column', function () {
     expect(array_slice($creators, -1)[0])->toBe('Zoe');
 });
 
+// The team is a foreign key on `documents`, so the naive sort would order by
+// insertion. The ids here run the opposite way to the names, which is what makes
+// the assertion mean something.
+it('sorts by team name rather than by team id', function () {
+    $zulu = Team::factory()->create(['name' => 'Zulu']);
+    $alpha = Team::factory()->create(['name' => 'Alpha']);
+    $author = User::factory()->create();
+    $inZulu = Document::factory()->for($author)->create(['team_id' => $zulu->id]);
+    $inAlpha = Document::factory()->for($author)->create(['team_id' => $alpha->id]);
+
+    $ascending = actingAs(superAdmin())
+        ->getJson('/api/documents?sort_by=team&sort_order=asc&per_page=-1')
+        ->assertOk()
+        ->json('data.*.id');
+
+    $descending = actingAs(superAdmin())
+        ->getJson('/api/documents?sort_by=team&sort_order=desc&per_page=-1')
+        ->assertOk()
+        ->json('data.*.id');
+
+    // Alpha before Zulu, even though Zulu's document was created first.
+    expect($ascending)->toBe([$inAlpha->id, $inZulu->id]);
+    expect($descending)->toBe([$inZulu->id, $inAlpha->id]);
+});
+
+// Team::select() carries the model's soft-delete scope, so the sort agrees with
+// the cell: ->with('team') leaves the relation null on these rows too.
+it('sorts a document whose team is trashed as null', function () {
+    $live = Team::factory()->create(['name' => 'Alpha']);
+    $binned = Team::factory()->create(['name' => 'Beta']);
+    $author = User::factory()->create();
+    $onLive = Document::factory()->for($author)->create(['team_id' => $live->id]);
+    $onBinned = Document::factory()->for($author)->create(['team_id' => $binned->id]);
+    $binned->delete();
+
+    $ascending = actingAs(superAdmin())
+        ->getJson('/api/documents?sort_by=team&sort_order=asc&per_page=-1')
+        ->assertOk()
+        ->json('data.*.id');
+
+    // Null sorts first ascending in both databases, so the trashed team's
+    // document leads rather than sorting under a name nothing displays.
+    expect($ascending)->toBe([$onBinned->id, $onLive->id]);
+});
+
 // Whitelisted against DocumentController::SORTABLE, so an unknown column is a
 // 422 rather than an injectable orderBy.
 it('refuses to sort by an unlisted column', function () {
@@ -452,6 +497,76 @@ it('refuses to sort by an unlisted column', function () {
     actingAs($admin)
         ->getJson('/api/documents?sort_by=team_id')
         ->assertJsonValidationErrorFor('sort_by');
+});
+
+it('sorts by the image count, which is withCount()s select alias', function () {
+    ['admin' => $admin, 'team' => $team, 'document' => $empty] = teamFixture();
+    $busy = Document::factory()->for($admin)->create(['team_id' => $team->id, 'title' => 'Busy']);
+    Image::factory()->count(3)->for($admin)->for($busy)->create();
+
+    $ascending = actingAs($admin)
+        ->getJson('/api/documents?sort_by=images_count&sort_order=asc')
+        ->assertOk()
+        ->json('data.*.id');
+
+    expect($ascending)->toBe([$empty->id, $busy->id]);
+
+    $descending = actingAs($admin)
+        ->getJson('/api/documents?sort_by=images_count&sort_order=desc')
+        ->assertOk()
+        ->json('data.*.id');
+
+    expect($descending)->toBe([$busy->id, $empty->id]);
+});
+
+// None of the sortable columns is unique, and LIMIT/OFFSET over a non-unique
+// key lets the database order ties differently per page - so without the id
+// tie-break the infinite-scrolled listing would repeat a card or skip one.
+it('does not repeat a row across pages when the sort column ties', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+    $stamp = now()->subDay();
+    Document::factory()->count(3)->for($admin)->create([
+        'team_id' => $team->id,
+        'created_at' => $stamp,
+    ]);
+
+    $ids = [];
+    foreach ([1, 2, 3, 4] as $page) {
+        $ids[] = actingAs($admin)
+            ->getJson("/api/documents?per_page=1&page={$page}&sort_by=created_at&sort_order=desc")
+            ->assertOk()
+            ->json('data.0.id');
+    }
+
+    expect($ids)->toHaveCount(4)->and(array_unique($ids))->toHaveCount(4);
+});
+
+// Document::booted() takes the images down with the document, so the default
+// scope would report zero for every trashed row - and leave its cover empty.
+it('counts and covers a trashed documents images with the document', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+    Image::factory()->count(2)->for($admin)->for($document)->create();
+    $document->delete();
+
+    $row = actingAs($admin)
+        ->getJson('/api/documents?trashed=only&cover=1')
+        ->assertOk()
+        ->json('data.0');
+
+    expect($row['images_count'])->toBe(2);
+    expect($row['images'])->toHaveCount(2);
+});
+
+// The live listing must not start showing images binned on their own.
+it('leaves the live listings count blind to individually trashed images', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+    $images = Image::factory()->count(2)->for($admin)->for($document)->create();
+    $images->first()->delete();
+
+    $row = actingAs($admin)->getJson('/api/documents?cover=1')->assertOk()->json('data.0');
+
+    expect($row['images_count'])->toBe(1);
+    expect($row['images'])->toHaveCount(1);
 });
 
 it('searches title, description and creator', function () {

@@ -29,13 +29,20 @@ class UserController extends Controller
      *
      * @var list<string>
      */
-    public const SORTABLE = ['id', 'name', 'email', 'role', 'created_at', 'updated_at'];
+    public const SORTABLE = ['id', 'name', 'email', 'role', 'team', 'created_at', 'updated_at'];
 
     /**
      * The API's name for the `is_super_admin` column, which is what the table
      * sorts by when the role header is clicked.
      */
     public const ROLE_SORT = 'role';
+
+    /**
+     * The API's name for the team's name, which lives neither on `users` nor on
+     * a column at all - see index(), which sorts on the select alias
+     * User::scopeWithTeamAssignment() already puts on every row.
+     */
+    public const TEAM_SORT = 'team';
 
     /**
      * What the table's "All" option sends for per_page.
@@ -62,9 +69,28 @@ class UserController extends Controller
                     ->where('name', 'like', "%{$search}%")
                     ->orWhere('email', 'like', "%{$search}%")
             ))
-            // `role` is the API's name for the is_super_admin column, so
-            // ascending puts plain users (0) before super-admins (1).
-            ->orderBy($sortBy === self::ROLE_SORT ? 'is_super_admin' : $sortBy, $direction);
+            // Neither `role` nor `team` is a column on `users`. `role` is the
+            // API's name for is_super_admin, so ascending puts plain users (0)
+            // before super-admins (1); `team` sorts on the name the cell shows,
+            // through the alias withTeamAssignment() has already selected -
+            // both databases resolve a select alias in ORDER BY, the same way
+            // DocumentController sorts on withCount()'s images_count.
+            //
+            // That subquery excludes trashed teams, so a user whose team is
+            // binned sorts as null alongside the team-less, which is what the
+            // cell shows for them too.
+            ->orderBy(match ($sortBy) {
+                self::ROLE_SORT => 'is_super_admin',
+                self::TEAM_SORT => 'team_assignment_name',
+                default => $sortBy,
+            }, $direction)
+            // A stable tie-break, and not optional once a sort can tie: a team
+            // name is shared by everyone in it and is_super_admin is 0 for
+            // nearly every row, and LIMIT/OFFSET over a non-unique key lets the
+            // database order ties differently per page - so page 2 can repeat a
+            // row from page 1 or skip one. DocumentController::index and
+            // ImageController::index carry the same line.
+            ->orderBy('id');
 
         // No default for the normal path: paginate() falls back to the model's
         // per-page when handed 0, which is what integer() returns for a missing

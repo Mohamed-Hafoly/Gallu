@@ -7,6 +7,7 @@ use App\Http\Requests\StoreDocumentRequest;
 use App\Http\Requests\UpdateDocumentRequest;
 use App\Http\Resources\DocumentResource;
 use App\Models\Document;
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
@@ -23,18 +24,24 @@ class DocumentController extends Controller
      * Columns the table may sort on. Anything else is a 422 from
      * IndexDocumentRequest rather than an injectable orderBy.
      *
-     * `creator` is not a column - see index(), which maps it to a subquery.
-     * `team` is absent deliberately: the admin table's team header is not
-     * sortable.
+     * Neither `creator` nor `team` is a column - see index(), which maps both
+     * to subqueries. `images_count` is not one either: it is withCount()'s
+     * select alias, which both MySQL and SQLite resolve in ORDER BY, so it
+     * needs no branch of its own.
      *
      * @var list<string>
      */
-    public const SORTABLE = ['id', 'title', 'creator', 'created_at', 'updated_at', 'deleted_at'];
+    public const SORTABLE = ['id', 'title', 'creator', 'team', 'images_count', 'created_at', 'updated_at', 'deleted_at'];
 
     /**
      * The API's name for the document owner's name, which lives on `users`.
      */
     public const CREATOR_SORT = 'creator';
+
+    /**
+     * The API's name for the owning team's name, which lives on `teams`.
+     */
+    public const TEAM_SORT = 'team';
 
     /**
      * What the table's "All" option sends for per_page.
@@ -58,12 +65,21 @@ class DocumentController extends Controller
      * and Media Library's helpers do not go through Eloquent's guarded path, so
      * a missing eager load there is an N+1 that strict mode will *not* catch.
      *
+     * $trashedImages is what makes a trashed document's card look like anything
+     * at all: Document::booted() soft-deletes the images alongside it, so the
+     * default scope hides every one of them and the cover falls back to the
+     * empty-folder icon. Only the trashed listing passes true — a live document
+     * must never show images that were binned on their own.
+     *
      * @return array<string, mixed>
      */
-    private static function with(): array
+    private static function with(bool $trashedImages = false): array
     {
         return [
-            'images' => fn ($query) => $query->latest()->limit(self::COVER_IMAGES),
+            'images' => fn ($query) => $query
+                ->when($trashedImages, fn ($images) => $images->withTrashed())
+                ->latest()
+                ->limit(self::COVER_IMAGES),
             'images.media' => fn ($query) => $query,
             'images.categories' => fn ($query) => $query,
             'images.user' => fn ($query) => $query,
@@ -127,25 +143,47 @@ class DocumentController extends Controller
             // `team` is rendered by the admin table and `images_count` by both
             // callers, so these are never conditional.
             ->with(['user', 'team'])
-            ->withCount('images')
+            // Counted through withTrashed() on a trashed listing, for the reason
+            // in self::with(): the images went down with the document, so the
+            // default scope would report 0 for every row - and the count is one
+            // of the columns this listing can be sorted by.
+            ->withCount(['images' => fn ($builder) => $builder
+                ->when($trashed !== null, fn ($images) => $images->withTrashed())])
             // Only the gallery's card grid wants the cover thumbnails; the admin
             // table shows a count and links to the document page, which fetches
             // its own images. See IndexDocumentRequest for why this is a
             // parameter.
-            ->when($request->boolean('cover'), fn ($builder) => $builder->with(self::with()));
+            ->when(
+                $request->boolean('cover'),
+                fn ($builder) => $builder->with(self::with($trashed !== null)),
+            );
 
-        // `creator` is the API's name for the owner's name, which lives on
-        // `users`. A correlated subselect rather than a join, so the sort cannot
-        // duplicate rows when a document has several images - the same technique
+        // `creator` and `team` are the API's names for values that live on
+        // other tables. Both sort on the *name* the cell shows rather than on
+        // the foreign key, which would order by insertion and read as broken.
+        //
+        // Correlated subselects rather than joins, so the sort cannot duplicate
+        // rows when a document has several images - the same technique
         // ImageController::index and User::scopeWithTeamAssignment() use.
-        $query->when(
-            $sortBy === self::CREATOR_SORT,
-            fn ($builder) => $builder->orderBy(
-                User::select('name')->whereColumn('users.id', 'documents.user_id'),
-                $direction,
-            ),
-            fn ($builder) => $builder->orderBy($sortBy, $direction),
-        );
+        //
+        // Team::select() carries the model's soft-delete scope, so a document
+        // whose team is trashed sorts as null. That agrees with the cell: the
+        // ->with(['user', 'team']) above leaves `team` null on those same rows.
+        // documents.team_id is nullable too, and both databases sort nulls
+        // first ascending.
+        $query->orderBy(match ($sortBy) {
+            self::CREATOR_SORT => User::select('name')->whereColumn('users.id', 'documents.user_id'),
+            self::TEAM_SORT => Team::select('name')->whereColumn('teams.id', 'documents.team_id'),
+            default => $sortBy,
+        }, $direction);
+
+        // A stable tie-break, and not optional once the listing is paged: none
+        // of the sortable columns is unique — documents seeded in one batch
+        // share created_at to the second — and LIMIT/OFFSET over a non-unique
+        // key lets the database order ties differently per page, so page 2 can
+        // repeat a row from page 1 or skip one. ImageController::index carries
+        // the same line, for the same reason.
+        $query->orderBy('id');
 
         // Absent means *everything*, as in ImageController::index and unlike
         // IndexUserRequest's caller: this endpoint's second caller is the
