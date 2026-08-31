@@ -1,6 +1,8 @@
 <?php
 
 use App\Enums\RoleName;
+use App\Models\Document;
+use App\Models\Image;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -196,7 +198,7 @@ it('exposes every field the admin table renders', function () {
     $row = actingAs(superAdmin())->getJson('/api/teams')->assertOk()->json('data.0');
 
     expect($row)->toHaveKeys([
-        'id', 'name', 'description', 'creator', 'members_count',
+        'id', 'name', 'description', 'creator', 'members_count', 'documents_count',
         'created_at', 'updated_at', 'deleted_at',
     ]);
 });
@@ -237,4 +239,95 @@ it('treats a padded name as a duplicate, since TrimStrings runs globally', funct
     actingAs(superAdmin())
         ->postJson('/api/teams', teamPayload(['name' => '  Design  ']))
         ->assertJsonValidationErrorFor('name');
+});
+
+// ---------------------------------------------------------------- the document cascade
+
+/**
+ * A team with one document holding one image, all live.
+ *
+ * @return array{team: Team, document: Document, image: Image}
+ */
+function teamWithContents(): array
+{
+    $team = Team::factory()->create();
+    $author = User::factory()->create();
+    $document = Document::factory()->for($author)->create(['team_id' => $team->id]);
+    $image = Image::factory()->for($author)->for($document)->create();
+
+    return compact('team', 'document', 'image');
+}
+
+// The invariant the whole cascade exists for: a live document always has a live
+// team, and an image never outlives the document above it.
+it('takes a teams documents and their images down with it', function () {
+    ['team' => $team, 'document' => $document, 'image' => $image] = teamWithContents();
+
+    actingAs(superAdmin())->deleteJson("/api/teams/{$team->id}")->assertNoContent();
+
+    expect($document->fresh()->trashed())->toBeTrue();
+    // Document::booted() ran, which is the point of deleting one at a time
+    // rather than with a bulk update that fires no events.
+    expect($image->fresh()->trashed())->toBeTrue();
+});
+
+it('restores a teams documents and their images with it', function () {
+    ['team' => $team, 'document' => $document, 'image' => $image] = teamWithContents();
+    $team->delete();
+
+    actingAs(superAdmin())->postJson("/api/teams/{$team->id}/restore")->assertOk();
+
+    expect($document->fresh()->trashed())->toBeFalse();
+    expect($image->fresh()->trashed())->toBeFalse();
+});
+
+// Restoring a team restores the team *whole*: its bin is emptied, however each
+// row got there. A document binned by hand a month before the team went comes
+// back with it, and is deleted again by hand if that was not wanted.
+it('revives a document binned on its own before its team went', function () {
+    ['team' => $team, 'document' => $document, 'image' => $image] = teamWithContents();
+    $document->delete();
+    $team->delete();
+
+    actingAs(superAdmin())->postJson("/api/teams/{$team->id}/restore")->assertOk();
+
+    expect($document->fresh()->trashed())->toBeFalse();
+    // And the chain runs all the way down, since the document comes back
+    // through restore() rather than a bulk update.
+    expect($image->fresh()->trashed())->toBeFalse();
+});
+
+// The same rule one level down, and the reason images.trashed_with_document was
+// dropped: an image binned before its document was still comes back with it.
+it('revives an image binned on its own before its document went', function () {
+    ['document' => $document, 'image' => $image] = teamWithContents();
+    $image->delete();
+    $document->delete();
+
+    actingAs(superAdmin())->postJson("/api/documents/{$document->id}/restore")->assertOk();
+
+    expect($image->fresh()->trashed())->toBeFalse();
+});
+
+// documents.team_id is nullOnDelete, so a hard delete simply detaches them and
+// the cascade must stay out of the way.
+it('leaves documents alone when a team is force deleted', function () {
+    ['team' => $team, 'document' => $document] = teamWithContents();
+
+    $team->forceDelete();
+
+    expect($document->fresh()->trashed())->toBeFalse();
+    expect($document->fresh()->team_id)->toBeNull();
+});
+
+// What the delete confirmation counts. Live rows only, which is exactly the set
+// the delete will bin.
+it('counts a teams live documents on the listing', function () {
+    ['team' => $team, 'document' => $document] = teamWithContents();
+    Document::factory()->for(User::factory())->create(['team_id' => $team->id])->delete();
+
+    $row = actingAs(superAdmin())->getJson('/api/teams')->assertOk()->json('data.0');
+
+    expect($row['documents_count'])->toBe(1);
+    expect($document->fresh()->trashed())->toBeFalse();
 });

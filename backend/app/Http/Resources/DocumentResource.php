@@ -9,7 +9,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /**
  * @mixin Document
  */
-class   DocumentResource extends JsonResource
+class DocumentResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -36,6 +36,16 @@ class   DocumentResource extends JsonResource
             'team' => $this->whenLoaded('team', fn () => $this->team === null ? null : [
                 'id' => $this->team->id,
                 'name' => $this->team->name,
+                // Non-null means an individual restore is refused with a 409:
+                // the team has to come back first, and it brings its documents
+                // with it. Read from the loaded relation rather than served as
+                // a top-level flag, so it costs no extra query and cannot drift
+                // from the name shown beside it.
+                //
+                // The listing loads `team` through withTrashed(), so this is a
+                // real answer there — see Document::teamIsTrashed(), which is
+                // what the endpoint actually enforces.
+                'deleted_at' => $this->team->deleted_at,
             ]),
             // Unconditional for the same reason as ImageResource's: documents.user_id
             // is NOT NULL and cascades on delete, so a document without a creator

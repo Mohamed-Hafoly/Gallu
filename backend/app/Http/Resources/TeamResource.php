@@ -26,6 +26,10 @@ class TeamResource extends JsonResource
             // Only present when the query asked for it, so the picker's payload
             // stays lean.
             'members_count' => $this->whenCounted('members'),
+            // Live documents only — the relation carries Document's soft-delete
+            // scope, so this is exactly the set Team::booted() will bin along
+            // with the team. The delete confirmation says the number out loud.
+            'documents_count' => $this->whenCounted('documents'),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'deleted_at' => $this->deleted_at,

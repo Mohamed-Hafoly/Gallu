@@ -198,10 +198,16 @@ it('requires a live team on update too', function () {
         ->patchJson("/api/documents/{$document->id}", ['title' => 'Renamed'])
         ->assertJsonValidationErrorFor('team_id');
 
+    // A document of its own, under a team that stays live: binning $team now
+    // takes $document down with it, and a trashed document is unbindable.
+    $live = Team::factory()->create();
+    $author = User::factory()->create();
+    $standing = Document::factory()->for($author)->create(['team_id' => $live->id]);
+
     $team->delete();
 
     actingAs(superAdmin())
-        ->patchJson("/api/documents/{$document->id}", [
+        ->patchJson("/api/documents/{$standing->id}", [
             'title' => 'Renamed',
             'team_id' => $team->id,
         ])
@@ -268,12 +274,10 @@ it('restores the images it took down when the document is restored', function ()
     expect(Image::find($image->id))->not->toBeNull();
 });
 
-// TODO: sepeare trashing is to be removed
-
-// The reason the cascade matches on deleted_at rather than restoring every
-// trashed image: an image binned on its own was not the document's doing, so
-// bringing the document back must not bring it back too.
-it('leaves an individually trashed image trashed when the document returns', function () {
+// Restoring a document restores the document *whole*: its bin is emptied,
+// however each image got there. This is what retired
+// images.trashed_with_document, whose only job was telling the two apart.
+it('restores an individually trashed image when the document returns', function () {
     ['admin' => $admin, 'document' => $document] = teamFixture();
     $binnedAlone = Image::factory()->for($admin)->for($document)->create();
     $wentWithDocument = Image::factory()->for($admin)->for($document)->create();
@@ -283,22 +287,25 @@ it('leaves an individually trashed image trashed when the document returns', fun
     actingAs($admin)->postJson("/api/documents/{$document->id}/restore")->assertOk();
 
     expect(Image::find($wentWithDocument->id))->not->toBeNull();
-    expect(Image::find($binnedAlone->id))->toBeNull();
+    expect(Image::find($binnedAlone->id))->not->toBeNull();
 });
 
-// The flag has to be cleared on an individual restore or it goes stale: this
-// image is deliberately binned after being brought back, so the document's
-// restore must not revive it a second time.
-it('does not revive an image binned again after being restored on its own', function () {
+// The boundary between the two restore endpoints, from the document's side.
+// Rescuing one image out of a trashed document is refused by
+// ImageController::restore - a live image cannot hang under a dead document -
+// so the document is the only way back, and it brings the image with it.
+it('refuses to rescue one image from a trashed document, and returns it with the document', function () {
     ['admin' => $admin, 'document' => $document] = teamFixture();
     $image = Image::factory()->for($admin)->for($document)->create();
 
     actingAs($admin)->deleteJson("/api/documents/{$document->id}")->assertNoContent();
-    actingAs($admin)->postJson("/api/images/{$image->id}/restore")->assertOk();
-    actingAs($admin)->deleteJson("/api/images/{$image->id}")->assertNoContent();
-    actingAs($admin)->postJson("/api/documents/{$document->id}/restore")->assertOk();
+    actingAs($admin)->postJson("/api/images/{$image->id}/restore")->assertStatus(409);
 
     expect(Image::find($image->id))->toBeNull();
+
+    actingAs($admin)->postJson("/api/documents/{$document->id}/restore")->assertOk();
+
+    expect(Image::find($image->id))->not->toBeNull();
 });
 
 // Image::scopeVisibleTo returns early for a super-admin, so before the cascade
@@ -407,7 +414,12 @@ it('returns the team and both timestamps on a listing row', function () {
 
     $row = actingAs($admin)->getJson('/api/documents')->assertOk()->json('data.0');
 
-    expect($row['team'])->toBe(['id' => $team->id, 'name' => $team->name]);
+    expect($row['team'])->toBe([
+        'id' => $team->id,
+        'name' => $team->name,
+        // The SPA's whole signal for whether an individual restore is allowed.
+        'deleted_at' => null,
+    ]);
     expect($row)->toHaveKeys(['created_at', 'updated_at', 'deleted_at']);
     expect($row['deleted_at'])->toBeNull();
 });
@@ -469,24 +481,27 @@ it('sorts by team name rather than by team id', function () {
     expect($descending)->toBe([$inZulu->id, $inAlpha->id]);
 });
 
-// Team::select() carries the model's soft-delete scope, so the sort agrees with
-// the cell: ->with('team') leaves the relation null on these rows too.
-it('sorts a document whose team is trashed as null', function () {
+// The sort subselect is widened with withTrashed(), so it agrees with the cell:
+// ->with('team') is widened the same way, and the trash table shows the name of
+// the team a document went down with.
+it('sorts a document under its trashed teams name', function () {
     $live = Team::factory()->create(['name' => 'Alpha']);
     $binned = Team::factory()->create(['name' => 'Beta']);
     $author = User::factory()->create();
     $onLive = Document::factory()->for($author)->create(['team_id' => $live->id]);
     $onBinned = Document::factory()->for($author)->create(['team_id' => $binned->id]);
+    // Takes $onBinned down with it, hence trashed=with below.
     $binned->delete();
 
     $ascending = actingAs(superAdmin())
-        ->getJson('/api/documents?sort_by=team&sort_order=asc&per_page=-1')
+        ->getJson('/api/documents?trashed=with&sort_by=team&sort_order=asc&per_page=-1')
         ->assertOk()
         ->json('data.*.id');
 
-    // Null sorts first ascending in both databases, so the trashed team's
-    // document leads rather than sorting under a name nothing displays.
-    expect($ascending)->toBe([$onBinned->id, $onLive->id]);
+    // Alpha before Beta: the binned team still sorts under the name its row
+    // displays, rather than collapsing to null alongside genuinely team-less
+    // documents.
+    expect($ascending)->toBe([$onLive->id, $onBinned->id]);
 });
 
 // Whitelisted against DocumentController::SORTABLE, so an unknown column is a
@@ -582,9 +597,10 @@ it('searches on the team name', function () {
         ->assertJsonCount(1, 'data');
 });
 
-// whereHas carries Team's soft-delete scope, so the search agrees with the cell
-// and with the team sort: a binned team is no team at all.
-it('does not match a document through a trashed teams name', function () {
+// whereHas is widened with withTrashed(), so the search agrees with the cell and
+// with the team sort: a document that went down with its team is still findable
+// by the name of the team that took it.
+it('matches a document through its trashed teams name', function () {
     ['team' => $team] = teamFixture();
     $team->update(['name' => 'Analytical Engines']);
     $team->delete();
@@ -592,7 +608,7 @@ it('does not match a document through a trashed teams name', function () {
     actingAs(superAdmin())
         ->getJson('/api/documents?search=Analytical&trashed=with')
         ->assertOk()
-        ->assertJsonCount(0, 'data');
+        ->assertJsonCount(1, 'data');
 });
 
 it('searches title, description and creator', function () {
@@ -632,6 +648,77 @@ it('refuses to let a member restore a document', function () {
     $document->delete();
 
     actingAs($member)->postJson("/api/documents/{$document->id}/restore")->assertForbidden();
+});
+
+// The rule the whole cascade serves: a live document always has a live team, so
+// a document cannot come back on its own while the team that took it down is
+// still in the bin. The team is restored first, and brings its documents with it.
+it('refuses to restore a document whose team is trashed', function () {
+    ['team' => $team, 'document' => $document] = teamFixture();
+    $team->delete();
+
+    actingAs(superAdmin())
+        ->postJson("/api/documents/{$document->id}/restore")
+        ->assertStatus(409)
+        ->assertJsonPath('message', __('document.teamTrashed'));
+
+    expect($document->fresh()->trashed())->toBeTrue();
+});
+
+// An abort_if in the controller rather than a DocumentPolicy rule precisely
+// because Gate::before would wave a super-admin straight past a policy - and the
+// super-admin is the only role that can see these rows at all.
+it('refuses a super admin the same restore', function () {
+    ['team' => $team] = teamFixture();
+    // Binned on its own first: the guard reads the team's current state, not
+    // how this document came to be in the bin.
+    $standing = Document::factory()->for(User::factory())->create(['team_id' => $team->id]);
+    $standing->delete();
+    $team->delete();
+
+    actingAs(superAdmin())
+        ->postJson("/api/documents/{$standing->id}/restore")
+        ->assertStatus(409);
+});
+
+// documents.team_id is nullable, and a document with no team has no team to
+// wait for.
+it('still restores a team less document', function () {
+    $document = Document::factory()->for(User::factory())->create(['team_id' => null]);
+    $document->delete();
+
+    actingAs(superAdmin())
+        ->postJson("/api/documents/{$document->id}/restore")
+        ->assertOk();
+});
+
+// The two paths must not double up: once the team has put its documents back,
+// the individual restore has nothing left to do and says so.
+it('reports a document already restored with its team as not trashed', function () {
+    ['team' => $team, 'document' => $document] = teamFixture();
+    $team->delete();
+
+    actingAs(superAdmin())->postJson("/api/teams/{$team->id}/restore")->assertOk();
+
+    expect($document->fresh()->trashed())->toBeFalse();
+
+    actingAs(superAdmin())
+        ->postJson("/api/documents/{$document->id}/restore")
+        ->assertNotFound();
+});
+
+// What turns the SPA's restore button off, and what it says instead of "-".
+it('reports the trashed teams name and deleted_at on the trashed listing', function () {
+    ['team' => $team] = teamFixture();
+    $team->delete();
+
+    $row = actingAs(superAdmin())
+        ->getJson('/api/documents?trashed=only')
+        ->assertOk()
+        ->json('data.0');
+
+    expect($row['team']['name'])->toBe($team->name);
+    expect($row['team']['deleted_at'])->not->toBeNull();
 });
 
 // ---------------------------------------------------------------- trashed listing

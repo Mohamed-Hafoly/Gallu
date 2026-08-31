@@ -39,12 +39,12 @@ class Document extends Model
     /**
      * Keep a document's images in step with its own trashed state.
      *
-     * The only model events in the app. They live here rather than in
-     * DocumentController::destroy() because the invariant — an image cannot
-     * outlive the document that gives it a place in the hierarchy, which is what
-     * the images.document_id migration says — has to hold for the bulk delete,
-     * for tinker, and for anything added later, not just for one controller
-     * action.
+     * They live here rather than in DocumentController because the invariant —
+     * an image cannot outlive the document that gives it a place in the
+     * hierarchy, which is what the images.document_id migration says — has to
+     * hold for the bulk delete, for tinker, and for anything added later, not
+     * just for one controller action. Team::booted() is the same pair one level
+     * up, and reaches these through delete() and restore().
      */
     protected static function booted(): void
     {
@@ -59,26 +59,26 @@ class Document extends Model
             }
 
             // The relation carries Image's own soft-delete scope, so this only
-            // touches images that are still live: an image already in the bin on
-            // its own is not the document's to take, and must not be its to
-            // return either. The flag is what records that difference — see the
-            // migration for why deleted_at cannot be used to infer it.
-            $document->images()->update([
-                'deleted_at' => $document->deleted_at,
-                'trashed_with_document' => true,
-            ]);
+            // touches live images. An image already in the bin keeps the
+            // deleted_at it has, which is all this needs to do: the restore
+            // below takes everything back regardless of how it got there.
+            $document->images()->update(['deleted_at' => $document->deleted_at]);
         });
 
         // `restoring`, not `restored`, so a failure aborts the whole restore
         // rather than leaving the document back and its images behind.
         static::restoring(function (Document $document): void {
-            // One raw update rather than restore() plus a second write to clear
-            // the flag — and it fires no Image events, which is what keeps
-            // Image::booted()'s own flag-clearing out of this path.
-            $document->images()
-                ->onlyTrashed()
-                ->where('trashed_with_document', true)
-                ->update(['deleted_at' => null, 'trashed_with_document' => false]);
+            // Every image in this document's bin, not only the ones its own
+            // delete put there. Restoring a document restores the document
+            // *whole*: an image binned separately beforehand comes back with
+            // it, and can be deleted again by hand if that was not wanted.
+            //
+            // This is what retired images.trashed_with_document, whose only
+            // purpose was telling the two apart.
+            //
+            // A raw update rather than restore() per image: one statement, and
+            // it fires no Image events.
+            $document->images()->onlyTrashed()->update(['deleted_at' => null]);
         });
     }
 
@@ -95,6 +95,29 @@ class Document extends Model
     public function images(): HasMany
     {
         return $this->hasMany(Image::class);
+    }
+
+    /**
+     * Whether the owning team is itself in the bin.
+     *
+     * team() cannot answer this: it carries Team's soft-delete scope, so it
+     * resolves to null for a trashed team exactly as it does for a null
+     * team_id — and those two must never be confused here. A document with no
+     * team may be restored; one whose team is trashed may not, because a live
+     * document always has a live team.
+     *
+     * The document's own trashed state cannot answer it either: how a document
+     * came to be in the bin makes no difference here. One binned on its own,
+     * whose team was deleted afterwards, is refused just the same — and comes
+     * back with that team, since a team's restore empties its whole bin.
+     */
+    public function teamIsTrashed(): bool
+    {
+        return $this->team_id !== null
+            && Team::withTrashed()
+                ->whereKey($this->team_id)
+                ->whereNotNull('deleted_at')
+                ->exists();
     }
 
     /**

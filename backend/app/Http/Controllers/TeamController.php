@@ -27,7 +27,7 @@ class TeamController extends Controller
         Gate::authorize('viewAny', Team::class);
 
         return TeamResource::collection(
-            Team::withTrashed()->with('user')->withCount('members')->orderBy('id')->get()
+            Team::withTrashed()->with('user')->withCount(['members', 'documents'])->orderBy('id')->get()
         );
     }
 
@@ -69,7 +69,7 @@ class TeamController extends Controller
             return $team;
         });
 
-        return new TeamResource($team->load('user')->loadCount('members'));
+        return new TeamResource($team->load('user')->loadCount(['members', 'documents']));
     }
 
     public function update(UpdateTeamRequest $request, Team $team): TeamResource
@@ -78,31 +78,41 @@ class TeamController extends Controller
 
         $team->update($request->safe()->only(['name', 'description']));
 
-        return new TeamResource($team->load('user')->loadCount('members'));
+        return new TeamResource($team->load('user')->loadCount(['members', 'documents']));
     }
 
     /**
      * Soft delete. Members keep their assignment rows so a restore brings the
      * team back intact — User::teamAssignment() excludes trashed teams, so they
      * read as team-less in the meantime.
+     *
+     * The team's documents do *not* stay behind: Team::booted() takes them down
+     * with it, and their images with them. Hence the transaction, on the same
+     * argument store() makes — a team binned with only some of its documents is
+     * worse than a failed delete the caller can simply retry.
      */
     public function destroy(Team $team): Response
     {
         Gate::authorize('delete', $team);
 
-        $team->delete();
+        DB::transaction(fn () => $team->delete());
 
         return response()->noContent();
     }
 
+    /**
+     * Put the team back, and with it every document its own delete took down.
+     * Team::booted() is what does that, and what leaves alone any document
+     * binned separately while the team was live.
+     */
     public function restore(Team $team): TeamResource
     {
         Gate::authorize('restore', $team);
 
         abort_if(! $team->trashed(), 404);
 
-        $team->restore();
+        DB::transaction(fn () => $team->restore());
 
-        return new TeamResource($team->load('user')->loadCount('members'));
+        return new TeamResource($team->load('user')->loadCount(['members', 'documents']));
     }
 }

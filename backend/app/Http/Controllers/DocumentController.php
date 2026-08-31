@@ -138,19 +138,29 @@ class DocumentController extends Controller
             // Both relations are searched through orWhereHas, unlike the users
             // listing, which needs a hand-built EXISTS: a document *has* a team
             // relation, where a user's membership is only a role pivot row. The
-            // relation carries Team's soft-delete scope, so a trashed team
-            // matches nothing - the same rule the team sort and the cell follow.
+            // relation carries Team's soft-delete scope, so it is widened with
+            // withTrashed() - the same rule the team sort and the cell follow,
+            // and what lets a search for a deleted team's name still find the
+            // documents that went down with it.
             ->when($search !== '', fn ($builder) => $builder->where(
                 fn ($grouped) => $grouped
                     ->where('title', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%")
                     ->orWhereHas('user', fn ($user) => $user->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('team', fn ($team) => $team->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('team', fn ($team) => $team->withTrashed()->where('name', 'like', "%{$search}%"))
             ))
 
             // `team` is rendered by the admin table and `images_count` by both
             // callers, so these are never conditional.
-            ->with(['user', 'team'])
+            //
+            // withTrashed() on the team, so a trashed document still reports the
+            // team it belonged to rather than a bare "-". That is now the whole
+            // explanation for why its restore button is off: DocumentResource
+            // passes the team's deleted_at through, and restore() refuses while
+            // it is set. Unconditional rather than only on a trashed listing,
+            // because Team::booted() means a *live* document can no longer have
+            // a trashed team — so the two cases cannot disagree.
+            ->with(['user', 'team' => fn ($builder) => $builder->withTrashed()])
             // Counted through withTrashed() on a trashed listing, for the reason
             // in self::with(): the images went down with the document, so the
             // default scope would report 0 for every row - and the count is one
@@ -174,14 +184,14 @@ class DocumentController extends Controller
         // rows when a document has several images - the same technique
         // ImageController::index and User::scopeWithTeamAssignment() use.
         //
-        // Team::select() carries the model's soft-delete scope, so a document
-        // whose team is trashed sorts as null. That agrees with the cell: the
-        // ->with(['user', 'team']) above leaves `team` null on those same rows.
-        // documents.team_id is nullable too, and both databases sort nulls
-        // first ascending.
+        // withTrashed() on the team subselect, so it agrees with the cell: the
+        // eager load above is widened the same way, and a trashed document
+        // sorts under the team name it displays rather than under null.
+        // documents.team_id is nullable, so nulls remain possible either way —
+        // both databases sort them first ascending.
         $query->orderBy(match ($sortBy) {
             self::CREATOR_SORT => User::select('name')->whereColumn('users.id', 'documents.user_id'),
-            self::TEAM_SORT => Team::select('name')->whereColumn('teams.id', 'documents.team_id'),
+            self::TEAM_SORT => Team::withTrashed()->select('name')->whereColumn('teams.id', 'documents.team_id'),
             default => $sortBy,
         }, $direction);
 
@@ -277,6 +287,19 @@ class DocumentController extends Controller
         Gate::authorize('restore', $document);
 
         abort_if(! $document->trashed(), 404);
+
+        // Not a DocumentPolicy rule, for the reason UserController's "you may
+        // not delete or demote yourself" guards are not either: Gate::before
+        // grants a super-admin every ability, and the super-admin is precisely
+        // who can see and act on these rows — Document::scopeVisibleTo() hides
+        // them from everyone else, since User::teamAssignment() reads a trashed
+        // team as no membership. A policy method would be dead code.
+        //
+        // 409 rather than 422 (nothing was submitted to validate) or 403 (this
+        // is a state conflict, not a permission): the caller may restore this
+        // document, just not yet. The SPA reads the message off it — see the
+        // axios interceptor, which surfaces `message` for any status below 500.
+        abort_if($document->teamIsTrashed(), 409, __('document.teamTrashed'));
 
         $document->restore();
 

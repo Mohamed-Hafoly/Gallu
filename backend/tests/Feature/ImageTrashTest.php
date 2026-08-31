@@ -378,6 +378,57 @@ it('does not let a search escape the team scope', function () {
 
 // ------------------------------------------------------------ restore
 
+// The rule DocumentController::restore enforces one level up: a live child
+// always has a live parent, so an image cannot come back into a document that is
+// itself in the bin.
+it('refuses to restore an image whose document is trashed', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+
+    $image = Image::factory()->for($admin)->for($document)->create();
+    $document->delete();
+
+    actingAs(superAdmin())
+        ->postJson("/api/images/{$image->id}/restore")
+        ->assertStatus(409)
+        ->assertJsonPath('message', __('image.documentTrashed'));
+
+    expect($image->fresh()->trashed())->toBeTrue();
+});
+
+// Why the guard is an abort_if in the controller rather than an ImagePolicy
+// rule: ::restore delegates to ::update, whose first branch returns true for the
+// owner without ever consulting the document. A policy could not refuse this
+// caller, any more than it could refuse a super-admin past Gate::before.
+it('refuses the images own uploader the same restore', function () {
+    ['member' => $member, 'document' => $document] = teamFixture();
+
+    $image = Image::factory()->for($member)->for($document)->create();
+    // Binned on its own first, so the guard is reading the document's current
+    // state rather than how this image came to be in the bin.
+    $image->delete();
+    $document->delete();
+
+    actingAs($member)
+        ->postJson("/api/images/{$image->id}/restore")
+        ->assertStatus(409);
+});
+
+// The way out the message points at - and the two paths must not double up.
+it('brings the image back with the document instead', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+
+    $image = Image::factory()->for($admin)->for($document)->create();
+    $document->delete();
+
+    actingAs($admin)->postJson("/api/documents/{$document->id}/restore")->assertOk();
+
+    expect($image->fresh()->trashed())->toBeFalse();
+
+    actingAs($admin)
+        ->postJson("/api/images/{$image->id}/restore")
+        ->assertNotFound();
+});
+
 it('restores a soft-deleted image', function () {
     ['admin' => $admin, 'document' => $document] = teamFixture();
 

@@ -251,6 +251,23 @@ class ImageController extends Controller
 
         abort_if(! $image->trashed(), 404);
 
+        // The same rule DocumentController::restore enforces one level up: a
+        // live child always has a live parent, so an image cannot come back
+        // into a document that is itself in the bin. Restoring the document is
+        // the way out, and it takes every image in its bin with it.
+        //
+        // An abort_if here rather than an ImagePolicy rule, because this binds
+        // every role and a policy cannot say that. Gate::before waves a
+        // super-admin past any policy; and ImagePolicy::update — which
+        // ::restore delegates to — returns true for the owner without ever
+        // consulting the document, so an image's own uploader would sail
+        // through as well.
+        //
+        // 409 rather than 422 or 403, as with the document guard: nothing was
+        // submitted to validate, and the caller may restore this image — just
+        // not yet.
+        abort_if($image->documentIsTrashed(), 409, __('image.documentTrashed'));
+
         $image->restore();
 
         return new ImageResource($image->load(['categories', 'media', 'user']));
