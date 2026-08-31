@@ -134,12 +134,20 @@ class DocumentController extends Controller
             ->when($trashed === 'only', fn ($builder) => $builder->onlyTrashed())
             // Grouped, so the ORs cannot escape the scope above and turn a
             // search into a cross-team read.
+            //
+            // Both relations are searched through orWhereHas, unlike the users
+            // listing, which needs a hand-built EXISTS: a document *has* a team
+            // relation, where a user's membership is only a role pivot row. The
+            // relation carries Team's soft-delete scope, so a trashed team
+            // matches nothing - the same rule the team sort and the cell follow.
             ->when($search !== '', fn ($builder) => $builder->where(
                 fn ($grouped) => $grouped
                     ->where('title', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%")
                     ->orWhereHas('user', fn ($user) => $user->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('team', fn ($team) => $team->where('name', 'like', "%{$search}%"))
             ))
+
             // `team` is rendered by the admin table and `images_count` by both
             // callers, so these are never conditional.
             ->with(['user', 'team'])

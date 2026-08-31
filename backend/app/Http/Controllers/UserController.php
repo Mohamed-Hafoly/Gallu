@@ -64,10 +64,18 @@ class UserController extends Controller
             // Same reason: role and team both come off teamAssignment(), which
             // would otherwise query per row.
             ->withTeamAssignment()
+            // Grouped, as in the sibling controllers, so the ORs stay part of
+            // the search rather than widening the listing.
+            //
+            // The team half is a correlated EXISTS on the role pivot, not the
+            // `team_assignment_name` alias the sort below uses: an alias is
+            // resolvable in ORDER BY but not in WHERE. See
+            // User::scopeOrWhereTeamNameLike().
             ->when($search !== '', fn ($builder) => $builder->where(
                 fn ($grouped) => $grouped
                     ->where('name', 'like', "%{$search}%")
                     ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhereTeamNameLike($search)
             ))
             // Neither `role` nor `team` is a column on `users`. `role` is the
             // API's name for is_super_admin, so ascending puts plain users (0)

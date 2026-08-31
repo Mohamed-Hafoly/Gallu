@@ -169,9 +169,8 @@ class User extends Authenticatable implements HasMedia
      */
     public function scopeWithTeamAssignment(Builder $query): void
     {
-        $select = fn (string $column) => fn (QueryBuilder $sub) => self::teamAssignmentQuery($sub)
-            ->whereColumn(self::pivotColumn(Config::morphKey()), $this->getTable().'.'.$this->getKeyName())
-            ->where(self::pivotColumn('model_type'), $this->getMorphClass())
+        $select = fn (string $column) => fn (QueryBuilder $sub) => $this
+            ->correlatedTeamAssignment($sub)
             ->select($column)
             ->limit(1);
 
@@ -180,6 +179,39 @@ class User extends Authenticatable implements HasMedia
             'team_assignment_name' => $select('teams.name'),
             'team_assignment_role' => $select('roles.name'),
         ]);
+    }
+
+    /**
+     * Match a user whose live team's name contains the term.
+     *
+     * `or`, because this belongs inside the users search's grouped where,
+     * beside the name and email clauses.
+     *
+     * An EXISTS rather than the `team_assignment_name` alias withTeamAssignment()
+     * already selects: an alias is resolvable in ORDER BY - which is how the
+     * team *sort* works - but not in WHERE. MySQL rejects it outright while
+     * SQLite quietly allows it, and the suite runs on SQLite, so the difference
+     * is one only the dev database would have shown.
+     */
+    public function scopeOrWhereTeamNameLike(Builder $query, string $search): void
+    {
+        $query->orWhereExists(
+            fn (QueryBuilder $sub) => $this->correlatedTeamAssignment($sub)
+                ->where('teams.name', 'like', "%{$search}%"),
+        );
+    }
+
+    /**
+     * teamAssignmentQuery(), tied to the row of `users` being read.
+     *
+     * Shared by the listing's select and by the search above so the two cannot
+     * drift - the same reason teamAssignmentQuery() itself exists.
+     */
+    protected function correlatedTeamAssignment(QueryBuilder $sub): QueryBuilder
+    {
+        return self::teamAssignmentQuery($sub)
+            ->whereColumn(self::pivotColumn(Config::morphKey()), $this->getTable().'.'.$this->getKeyName())
+            ->where(self::pivotColumn('model_type'), $this->getMorphClass());
     }
 
     /**

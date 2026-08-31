@@ -569,6 +569,32 @@ it('leaves the live listings count blind to individually trashed images', functi
     expect($row['images'])->toHaveCount(1);
 });
 
+// The team is a relation on `documents`, so this rides orWhereHas rather than
+// the EXISTS the users listing needs.
+it('searches on the team name', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+    $team->update(['name' => 'Analytical Engines']);
+
+    actingAs($admin)
+        ->getJson('/api/documents?search='.urlencode('lytical Eng'))
+        ->assertOk()
+        // The fixture's own document is the team's only one.
+        ->assertJsonCount(1, 'data');
+});
+
+// whereHas carries Team's soft-delete scope, so the search agrees with the cell
+// and with the team sort: a binned team is no team at all.
+it('does not match a document through a trashed teams name', function () {
+    ['team' => $team] = teamFixture();
+    $team->update(['name' => 'Analytical Engines']);
+    $team->delete();
+
+    actingAs(superAdmin())
+        ->getJson('/api/documents?search=Analytical&trashed=with')
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+});
+
 it('searches title, description and creator', function () {
     ['admin' => $admin, 'team' => $team] = teamFixture();
     Document::factory()->for($admin)->create(['team_id' => $team->id, 'title' => 'Findable']);

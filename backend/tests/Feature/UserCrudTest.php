@@ -156,9 +156,15 @@ it('still honours the search when asked for every row', function () {
         ->assertJsonPath('meta.total', 1);
 });
 
-it('searches on the name and on the email', function (string $term) {
+it('searches on the name, the email and the team', function (string $term) {
     $admin = superAdmin();
-    User::factory()->create(['name' => 'Ada Lovelace', 'email' => 'ada@example.com']);
+    $ada = User::factory()->create(['name' => 'Ada Lovelace', 'email' => 'ada@example.com']);
+
+    // Ada is the only member: TeamFactory fills the team's `user_id` with a
+    // fresh user, and creating a team is not joining it, so that user must not
+    // turn up in a team search.
+    $ada->assignToTeam(Team::factory()->create(['name' => 'Analytical Engines']), RoleName::Member);
+
     User::factory()->count(5)->create();
 
     actingAs($admin)
@@ -170,7 +176,47 @@ it('searches on the name and on the email', function (string $term) {
 })->with([
     'name fragment' => ['Lovelace'],
     'email fragment' => ['ada@example'],
+    // Mid-string, so a missing trailing wildcard would fail this.
+    'team fragment' => ['lytical Eng'],
 ]);
+
+// teamAssignmentQuery() excludes trashed teams, so the search agrees with what
+// the Team column shows and with what the team sort orders by: a binned team is
+// no team at all.
+it('does not match a user through a trashed teams name', function () {
+    $admin = superAdmin();
+    $team = Team::factory()->create(['name' => 'Analytical Engines']);
+    User::factory()->create(['name' => 'Ada Lovelace'])->assignToTeam($team, RoleName::Member);
+
+    $team->delete();
+
+    actingAs($admin)
+        ->getJson('/api/users?search=Analytical')
+        ->assertOk()
+        ->assertJsonCount(0, 'data')
+        ->assertJsonPath('meta.total', 0);
+});
+
+// The grouped where is what keeps this true: an ungrouped OR would escape the
+// search and hand back rows nobody asked for.
+it('returns every member of a team the search names', function () {
+    $admin = superAdmin();
+    $team = Team::factory()->create(['name' => 'Analytical Engines']);
+
+    $members = User::factory()->count(3)->create();
+    foreach ($members as $member) {
+        $member->assignToTeam($team, RoleName::Member);
+    }
+
+    User::factory()->count(4)->create();
+
+    $ids = actingAs($admin)
+        ->getJson('/api/users?search=Analytical&per_page=-1')
+        ->assertOk()
+        ->json('data.*.id');
+
+    expect($ids)->toEqualCanonicalizing($members->pluck('id')->all());
+});
 
 it('treats an empty search as no search at all', function () {
     $admin = superAdmin();
