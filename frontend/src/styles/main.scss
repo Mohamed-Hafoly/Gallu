@@ -15,4 +15,93 @@
   .v-table:not(.v-table--fixed-height) > .v-table__wrapper {
     overflow-y: hidden;
   }
+
+  // Bidi-safe truncation and mixed-script text.
+  //
+  // `text-overflow: ellipsis` puts the ellipsis at the element's *logical* end.
+  // Vuetify sets `direction: rtl` on the app root in Arabic, so an RTL element
+  // holding a Latin value clips its start and shows only the tail — the least
+  // identifying half. `unicode-bidi: plaintext` is dir="auto" expressed as CSS:
+  // the paragraph's direction comes from its first strong character, so the
+  // ellipsis lands at the text's own end instead. Unlike the attribute it can
+  // be applied by selector, which is what makes this one fix rather than one
+  // patch per call site — there were about twenty before this block existed.
+  //
+  // The list is every surface that truncates app-wide: Tailwind's utilities,
+  // and the Vuetify classes that carry text-overflow unconditionally in their
+  // own stylesheets. `.bidi-auto` is the opt-in for text that does *not*
+  // truncate but is still user-supplied, and so can disagree with the UI
+  // script — it needs the same paragraph handling for correct bidi ordering.
+  $bidi-text:
+    ".bidi-auto",
+    ".truncate",
+    ".text-truncate",
+    '[class*="line-clamp-"]',
+    ".v-card-title",
+    ".v-card-subtitle",
+    ".v-list-item-title",
+    ".v-list-item-subtitle";
+
+  // Data table cells are separate because pinning them has to spare the
+  // columns that asked for a different alignment; see below.
+  $bidi-cell: ".v-data-table__td.v-data-table-column--nowrap";
+
+  #{$bidi-text},
+  #{$bidi-cell} {
+    unicode-bidi: plaintext;
+  }
+
+  // Pinned with physical left/right, not `text-align: start`: under plaintext
+  // `start` resolves against the paragraph above, so a column holding both
+  // Arabic and Latin values would alternate alignment row by row. Verified in
+  // Chrome 148 — `match-parent`, which would express this in one declaration,
+  // is still unsupported there (CSS.supports returns false).
+  //
+  // tailwind-utilities is a later layer than this one, so a local text-center
+  // or text-right at a call site still overrides these.
+  #{$bidi-text} {
+    text-align: left;
+  }
+
+  // Named explicitly rather than matching every nowrap cell, so a column given
+  // `align: 'center'` or `'end'` keeps the alignment it asked for. Every other
+  // cell carries --align-start by default (VDataTableColumn).
+  #{$bidi-cell}.v-data-table-column--align-start {
+    text-align: left;
+  }
+
+  // Looped rather than written as `.v-locale--is-rtl :is(#{$bidi-text})`:
+  // interpolating the list straight after the ancestor would attach it to the
+  // first selector only, and the `:is()` form is silently mangled by the
+  // production minifier, which flattens it and loses the ancestor. One rule per
+  // selector survives both, and the minifier re-merges them itself.
+  @each $selector in $bidi-text {
+    .v-locale--is-rtl #{$selector} {
+      text-align: right;
+    }
+  }
+
+  .v-locale--is-rtl #{$bidi-cell}.v-data-table-column--align-start {
+    text-align: right;
+  }
+
+  // A guard, not a fix for anything in the app today: nothing here puts
+  // `truncate` on a form control directly. The `[&_input]:truncate` pattern the
+  // user/team/document dialogs and the profile page use leaves the class on the
+  // v-input *wrapper* and styles the input through a descendant selector, so
+  // none of the rules above reach the input at all — those fields get their
+  // direction from their own dir="auto", which is why that attribute stays on
+  // them. It also drives caret and typing direction, which CSS cannot.
+  //
+  // Should a `truncate` ever land on an input, this keeps the value aligned to
+  // its own content rather than to the UI, where a half-typed Arabic value
+  // would otherwise jump. The .v-locale--is-rtl copies are not redundant:
+  // without them the RTL pin above weighs two classes and outranks a bare
+  // `input.truncate`, which is one class and one type.
+  input.truncate,
+  textarea.truncate,
+  .v-locale--is-rtl input.truncate,
+  .v-locale--is-rtl textarea.truncate {
+    text-align: start;
+  }
 }

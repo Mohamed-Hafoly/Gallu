@@ -60,13 +60,39 @@
   // and the titles would keep the locale that was active then.
   const columns = computed(() => [
     { title: t("admin.categories.id"), key: "id", sortable: true },
+    // The three free-text columns are capped and nowrapped like every other
+    // admin table's: without it one long value stretches its column, wraps the
+    // cell and makes that row taller than the rest — and here it would differ
+    // between the live and trashed tables, which have different column counts.
+    //
+    // The ellipsis side is not this file's problem — styles/main.scss handles
+    // it for every nowrap cell in the app. Only the hover title is local.
     {
       title: t("admin.categories.nameEnglish"),
       key: "name_en",
       sortable: true,
+      maxWidth: 240,
+      nowrap: true,
+      cellProps: ({ item }: { item: Category }) => ({ title: item.name_en }),
     },
-    { title: t("admin.categories.nameArabic"), key: "name_ar", sortable: true },
-    { title: t("admin.categories.creator"), key: "creator", sortable: true },
+    {
+      title: t("admin.categories.nameArabic"),
+      key: "name_ar",
+      sortable: true,
+      maxWidth: 240,
+      nowrap: true,
+      cellProps: ({ item }: { item: Category }) => ({ title: item.name_ar }),
+    },
+    {
+      title: t("admin.categories.creator"),
+      key: "creator",
+      sortable: true,
+      maxWidth: 160,
+      nowrap: true,
+      // Empty string rather than the placeholder, so a creator-less row gets no
+      // tooltip at all instead of one reading "-".
+      cellProps: ({ item }: { item: Category }) => ({ title: item.creator ?? "" }),
+    },
     { title: t("common.createdAt"), key: "created_at", sortable: true },
     { title: t("common.updatedAt"), key: "updated_at", sortable: true },
   ]);

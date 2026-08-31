@@ -1,6 +1,4 @@
 <script setup lang="ts">
-  import { useRtl } from "vuetify";
-
   /**
    * A dialog field the user can never change — the id, creator, and the three
    * timestamps. Callers pre-format: `value` is a plain string, not a date.
@@ -14,8 +12,6 @@
     value: string;
     editable?: boolean;
   }>();
-
-  const { isRtl } = useRtl();
 </script>
 
 <template>
@@ -31,12 +27,16 @@
     <h2 class="mb-2 text-lg font-semibold">{{ label }}</h2>
 
     <!--
-      The indent is physical (mr-/ml-), not logical (ms-): dir="auto" sets this
-      element's direction from the text, so ms-2 would indent from whichever
-      side the *content's* language starts — left for a Latin name in the Arabic
-      UI. dir="auto" still drives bidi ordering and the ellipsis side.
+      bidi-auto, because the value is user text and can be Latin in the Arabic
+      UI: it needs its paragraph direction taken from its own first strong
+      character for correct bidi ordering. See styles/main.scss.
+
+      The indent can be logical (ms-) precisely because that class works in CSS
+      rather than through dir="auto": it leaves this element's own `direction`
+      as the UI's, so the indent follows the UI edge the text is pinned to. The
+      dir="auto" this replaces would have flipped it to the content's side.
     -->
-    <p :class="isRtl ? 'text-right mr-2' : 'text-left ml-2'" dir="auto">
+    <p class="bidi-auto ms-2">
       {{ value }}
     </p>
   </div>

@@ -2,7 +2,6 @@
   import type { Image } from "@/types/image";
   import { computed, onMounted, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
-  import { useRtl } from "vuetify";
   import { useBulkSelection } from "@/composables/useBulkSelection";
   import { useDateFormat } from "@/composables/useDateFormat";
   import { useImagePermissions } from "@/composables/useImagePermissions";
@@ -74,7 +73,6 @@
   ] as const;
 
   const { t } = useI18n();
-  const { isRtl } = useRtl();
   const { formatRelative } = useDateFormat();
   const imageStore = useImageStore();
   const notifier = useNotifierStore();
@@ -595,21 +593,16 @@
             </v-img>
 
             <!--
-              dir="auto" picks the ellipsis side from the text's own direction;
-              useRtl() keeps every card pinned to the UI edge regardless.
+              .v-card-title and .v-card-subtitle truncate by default, and both
+              hold user text that can be Arabic among English ones. Which side
+              the ellipsis falls on, and which edge the text pins to, is handled
+              for both classes in styles/main.scss.
             -->
-            <v-card-title
-              class="p-3 pb-1 font-medium"
-              :class="isRtl ? 'text-right' : 'text-left'"
-              dir="auto"
-            >
+            <v-card-title class="p-3 pb-1 font-medium">
               {{ image.title }}
             </v-card-title>
 
-            <v-card-subtitle
-              :class="isRtl ? 'text-right mr-1' : 'text-left ml-1'"
-              dir="auto"
-            >
+            <v-card-subtitle class="ms-1">
               {{ image.creator }}
             </v-card-subtitle>
 
@@ -627,24 +620,17 @@
                 painting an ellipsis, and no standard multi-line alternative is
                 supported there. text-overflow does paint one, at the cost of
                 being a single line.
-
-                dir="auto" picks the ellipsis side from the description's own
-                text; useRtl() keeps every card's text pinned to the UI edge
-                regardless.
               -->
-              <p
-                class="mt-4 truncate"
-                :class="isRtl ? 'text-right' : 'text-left'"
-                dir="auto"
-              >
+              <p class="mt-4 truncate">
                 {{ image.description || t("gallery.noDescription") }}
               </p>
 
               <!--
-                No dir="auto" here, unlike the lines above: Intl.RelativeTimeFormat
-                renders in the active locale, so this string's script always
-                matches the UI and dir="auto" would be inert. Only user-supplied
-                text (title, description, creator) can disagree with the UI.
+                text-start, not the bidi handling the lines above get:
+                Intl.RelativeTimeFormat renders in the active locale, so this
+                string's script always matches the UI and its direction is
+                already the element's. Only user-supplied text (title,
+                description, creator) can disagree with the UI.
 
                 cardTimestamp() carries its own label, so the string already
                 says which time it is — created_at was dropped because the
@@ -652,10 +638,7 @@
                 every card.
               -->
               <div class="mt-auto pt-4 flex items-center justify-between gap-2">
-                <p
-                  class="text-sm opacity-70"
-                  :class="isRtl ? 'text-right' : 'text-left'"
-                >
+                <p class="text-sm text-start opacity-70">
                   {{ cardTimestamp(image) }}
                 </p>
 

@@ -33,10 +33,14 @@ describe("ReadOnlyField", () => {
 
   // No "missing value" case: images.user_id is NOT NULL and ImageResource serves
   // both creator and created_at unconditionally, so `value` is always a string.
+  // Asserts the class, not a dir="auto" attribute: the paragraph direction now
+  // comes from `unicode-bidi: plaintext`, which .bidi-auto carries in
+  // styles/main.scss. jsdom applies no stylesheet, so the class is the only
+  // observable part here — the rendered effect is verified in the browser.
   it("keeps a value in the other script on its own side", () => {
     const wrapper = mountField({ label: "المنشئ", value: "محمد عبد الرحمن" });
 
-    expect(wrapper.find("p").attributes("dir")).toBe("auto");
+    expect(wrapper.find("p").classes()).toContain("bidi-auto");
     expect(wrapper.text()).toContain("محمد عبد الرحمن");
   });
 });

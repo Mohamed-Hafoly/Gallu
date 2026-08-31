@@ -3,7 +3,6 @@
   import type { Image } from "@/types/image";
   import { computed, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
-  import { useRtl } from "vuetify";
   import { useDateFormat } from "@/composables/useDateFormat";
   import { useImageStore } from "@/stores/image";
   import { useNotifierStore } from "@/stores/notifier";
@@ -50,7 +49,6 @@
   }
 
   const { t } = useI18n();
-  const { isRtl } = useRtl();
   const { formatDateTime } = useDateFormat();
   const imageStore = useImageStore();
   const notifier = useNotifierStore();
@@ -96,12 +94,9 @@
       // titles run to about 28 characters.
       maxWidth: 240,
       nowrap: true,
-      // Titles are user-entered and can be Arabic among English ones, so the
-      // same dir="auto" + pinned-alignment pairing the description gets.
-      cellProps: {
-        dir: "auto",
-        class: isRtl.value ? "text-right" : "text-left",
-      },
+      // Only the hover title is local now: which side the ellipsis falls on is
+      // handled once for every truncating element in styles/main.scss.
+      cellProps: ({ item }: { item: Image }) => ({ title: item.title }),
     },
     {
       title: t("admin.images.description"),
@@ -112,14 +107,9 @@
       // keeps row heights uniform.
       maxWidth: 320,
       nowrap: true,
-      // The ellipsis goes at the cell's *logical* end, so an RTL cell holding
-      // LTR text clips the start and shows only the tail. dir="auto" takes the
-      // side from the description's own direction; useRtl() then pins the
-      // column to the UI edge, or rows would alternate alignment by script.
-      cellProps: {
-        dir: "auto",
-        class: isRtl.value ? "text-right" : "text-left",
-      },
+      // Empty string rather than the placeholder, so a description-less row
+      // gets no tooltip at all instead of one reading "-".
+      cellProps: ({ item }: { item: Image }) => ({ title: item.description ?? "" }),
     },
     // Sortable, even though `creator` is not a column on `images` — the backend
     // maps it to a correlated subselect against users.name.
@@ -134,6 +124,7 @@
       sortable: true,
       maxWidth: 160,
       nowrap: true,
+      cellProps: ({ item }: { item: Image }) => ({ title: item.creator }),
     },
     { title: t("admin.images.document"), key: "document_id", sortable: true },
     { title: t("common.createdAt"), key: "created_at", sortable: true },

@@ -1,6 +1,5 @@
 <script setup lang="ts">
   import { useI18n } from "vue-i18n";
-  import { useRtl } from "vuetify";
   import { useImageValidationRules } from "@/composables/useImageValidationRules";
 
   defineProps<{
@@ -16,7 +15,6 @@
   const model = defineModel<string>({ default: "" });
 
   const { t } = useI18n();
-  const { isRtl } = useRtl();
   const { titleRules } = useImageValidationRules();
 </script>
 
@@ -32,11 +30,8 @@
     />
   </div>
 
-  <v-card-title
-    v-else
-    :class="isRtl ? 'text-right' : 'text-left'"
-    dir="auto"
-  >
+  <!-- .v-card-title truncates; its bidi handling is in styles/main.scss. -->
+  <v-card-title v-else>
     {{ model }}
   </v-card-title>
 </template>

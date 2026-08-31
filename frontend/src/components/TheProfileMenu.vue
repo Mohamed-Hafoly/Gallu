@@ -35,21 +35,13 @@
             </template>
 
             <template #title>
-              <p
-                class="text-base text-start truncate max-w-[18ch]"
-                dir="auto"
-                :title="name"
-              >
+              <p class="text-base truncate max-w-[18ch]" :title="name">
                 {{ name }}
               </p>
             </template>
 
             <template #subtitle>
-              <p
-                class="text-sm text-start truncate max-w-[18ch]"
-                dir="auto"
-                :title="email"
-              >
+              <p class="text-sm truncate max-w-[18ch]" :title="email">
                 {{ truncateEmail(email, 18) }}
               </p>
             </template>
@@ -71,17 +63,13 @@
             </template>
 
             <template #title>
-              <p
-                class="text-start truncate max-w-[22ch]"
-                dir="auto"
-                :title="name"
-              >
+              <p class="truncate max-w-[22ch]" :title="name">
                 {{ name }}
               </p>
             </template>
 
             <template #subtitle>
-              <p class="text-start truncate" :title="email">
+              <p class="truncate" :title="email">
                 {{ truncateEmail(email, 22) }}
               </p>
             </template>

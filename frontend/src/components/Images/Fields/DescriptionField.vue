@@ -1,13 +1,11 @@
 <script setup lang="ts">
   import { useI18n } from "vue-i18n";
-  import { useRtl } from "vuetify";
   import { useImageValidationRules } from "@/composables/useImageValidationRules";
 
   defineProps<{ editable?: boolean }>();
   const model = defineModel<string>({ default: "" });
 
   const { t } = useI18n();
-  const { isRtl } = useRtl();
   const { descriptionRules } = useImageValidationRules();
 </script>
 
@@ -26,12 +24,8 @@
     :rules="descriptionRules"
   />
 
-  <!-- Physical indent, not logical — see the note in ReadOnlyField.vue. -->
-  <p
-    v-else
-    :class="isRtl ? 'text-right mr-2' : 'text-left ml-2'"
-    dir="auto"
-  >
+  <!-- Logical indent, and bidi-auto — see the note in ReadOnlyField.vue. -->
+  <p v-else class="bidi-auto ms-2">
     {{ model || t("gallery.noDescription") }}
   </p>
 </template>

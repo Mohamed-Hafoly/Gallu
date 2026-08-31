@@ -76,7 +76,7 @@
       </template>
 
       <v-list-item-title>
-        <span class="truncate" dir="auto" :title="user.name">
+        <span class="truncate" :title="user.name">
           {{ user.name }}
         </span>
       </v-list-item-title>

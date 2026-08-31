@@ -3,7 +3,6 @@
   import { computed, onMounted, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
   import { useRouter } from "vue-router";
-  import { useRtl } from "vuetify";
   import { useBulkSelection } from "@/composables/useBulkSelection";
   import { useDateFormat } from "@/composables/useDateFormat";
   import { useDocumentPermissions } from "@/composables/useDocumentPermissions";
@@ -59,7 +58,6 @@
   ] as const;
 
   const { t } = useI18n();
-  const { isRtl } = useRtl();
   const { formatRelative } = useDateFormat();
   const { canCreate, canEdit, canDelete, lockedTeamId } =
     useDocumentPermissions();
@@ -612,25 +610,23 @@
               <v-icon icon="mdi-folder-outline" size="48" />
             </div>
 
-            <v-card-title
-              class="p-3 pb-1 font-medium"
-              :class="isRtl ? 'text-right' : 'text-left'"
-              dir="auto"
-            >
+            <!--
+              .v-card-title and .v-card-subtitle truncate by default, and both
+              hold user text that can be Arabic among English ones. Which side
+              the ellipsis falls on, and which edge the text pins to, is handled
+              for both classes in styles/main.scss.
+            -->
+            <v-card-title class="p-3 pb-1 font-medium">
               {{ doc.title }}
             </v-card-title>
 
-            <v-card-subtitle
-              :class="isRtl ? 'text-right mr-1' : 'text-left ml-1'"
-              dir="auto"
-            >
+            <v-card-subtitle class="ms-1">
               {{ doc.creator }}
             </v-card-subtitle>
 
             <v-card-text class="pb-2 flex flex-col">
               <v-chip
-                class="self-start"
-                :class="isRtl ? 'text-right' : 'text-left'"
+                class="self-start text-start"
                 color="tertiary"
                 size="small"
                 variant="elevated"
@@ -650,11 +646,7 @@
                 ellipsis, and no standard multi-line alternative is supported
                 there. text-overflow does paint one, but only on a single line.
               -->
-              <p
-                class="mt-4 truncate"
-                :class="isRtl ? 'text-right' : 'text-left'"
-                dir="auto"
-              >
+              <p class="mt-4 truncate">
                 {{ doc.description || t("gallery.noDescription") }}
               </p>
 
@@ -664,15 +656,13 @@
                 add height, and the cards are deliberately identical (see the
                 min-h note above).
 
-                No dir="auto" on the timestamp, unlike the lines above: Intl
-                renders it in the active locale, so its script always matches
-                the UI. Only user-supplied text can disagree.
+                text-start on the timestamp, not the bidi handling the lines
+                above get: Intl renders it in the active locale, so its script
+                always matches the UI and its direction is already the
+                element's. Only user-supplied text can disagree.
               -->
               <div class="mt-auto pt-4 flex items-center justify-between gap-2">
-                <p
-                  class="text-sm opacity-70"
-                  :class="isRtl ? 'text-right' : 'text-left'"
-                >
+                <p class="text-sm text-start opacity-70">
                   {{ cardTimestamp(doc) }}
                 </p>
 

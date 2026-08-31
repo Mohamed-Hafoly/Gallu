@@ -63,15 +63,47 @@
   const headers = computed(() => [
     { title: t("admin.users.id"), key: "id", sortable: true },
     { title: t("admin.users.avatar"), key: "avatar", sortable: false },
-    { title: t("admin.users.name"), key: "name", sortable: true },
-    { title: t("admin.users.email"), key: "email", sortable: true },
+    // Capped and nowrapped like the other admin tables' free-text columns: a
+    // long value would otherwise stretch its column, wrap the cell and make
+    // that row taller than the rest. 160 is the same cap the creator and team
+    // columns take elsewhere, since these hold the same kind of value.
+    //
+    // The ellipsis side is not this file's problem — styles/main.scss handles
+    // it for every nowrap cell in the app. Only the hover title is local.
+    {
+      title: t("admin.users.name"),
+      key: "name",
+      sortable: true,
+      maxWidth: 160,
+      nowrap: true,
+      cellProps: ({ item }: { item: User }) => ({ title: item.name }),
+    },
+    // Wider than the rest: an address is long by nature, and truncateEmail()
+    // exists precisely because clipping one eats the identifying half. Here the
+    // cap is a last resort and the title makes the whole address recoverable.
+    {
+      title: t("admin.users.email"),
+      key: "email",
+      sortable: true,
+      maxWidth: 240,
+      nowrap: true,
+      cellProps: ({ item }: { item: User }) => ({ title: item.email }),
+    },
     // The API's name for the is_super_admin column, which is what the backend
     // actually sorts on.
     { title: t("admin.users.role"), key: "role", sortable: true },
     // The team lives in the role pivot rather than on `users`, but the listing
     // already selects its name through withTeamAssignment() - so the backend
     // sorts on that alias, and this orders by the name the cell shows.
-    { title: t("admin.users.team"), key: "team", sortable: true },
+    {
+      title: t("admin.users.team"),
+      key: "team",
+      sortable: true,
+      // Team names are free text and can be long; same cap as the name above.
+      maxWidth: 160,
+      nowrap: true,
+      cellProps: ({ item }: { item: User }) => ({ title: item.team?.name ?? "" }),
+    },
     { title: t("common.createdAt"), key: "created_at", sortable: true },
     { title: t("common.updatedAt"), key: "updated_at", sortable: true },
     { title: t("admin.users.actions"), key: "actions", sortable: false },

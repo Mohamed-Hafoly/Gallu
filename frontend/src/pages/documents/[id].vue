@@ -88,7 +88,7 @@
     </p>
 
     <template v-else-if="document">
-      <div class="flex flex-col gap-3 mb-6" :class="isRtl ? 'text-right' : 'text-left'">
+      <div class="flex flex-col gap-3 mb-6 text-start">
         <!--
           `exact` is load-bearing. Vue Router matches active routes inclusively,
           so /documents/13 counts as being inside /documents and this link would
@@ -137,9 +137,14 @@
           </div>
         </div>
 
-        <h1 class="text-2xl font-semibold" dir="auto">{{ document.title }}</h1>
+        <!--
+          bidi-auto: both are user text and can be Latin in the Arabic UI, so
+          each needs its paragraph direction read from its own first strong
+          character. See styles/main.scss.
+        -->
+        <h1 class="bidi-auto text-2xl font-semibold">{{ document.title }}</h1>
 
-        <p v-if="document.description" class="mt-1 text-sm" dir="auto">
+        <p v-if="document.description" class="bidi-auto mt-1 text-sm">
           {{ document.description }}
         </p>
 

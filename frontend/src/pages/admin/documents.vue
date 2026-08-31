@@ -3,7 +3,6 @@
   import type { Document } from "@/types/document";
   import { computed, ref, watch } from "vue";
   import { useI18n } from "vue-i18n";
-  import { useRtl } from "vuetify";
   import { useDateFormat } from "@/composables/useDateFormat";
   import { useDocumentStore } from "@/stores/document";
   import { useNotifierStore } from "@/stores/notifier";
@@ -39,7 +38,6 @@
   }
 
   const { t } = useI18n();
-  const { isRtl } = useRtl();
   const { formatDateTime } = useDateFormat();
   const documentStore = useDocumentStore();
   const notifier = useNotifierStore();
@@ -88,10 +86,9 @@
       // description's 320 because real titles are short.
       maxWidth: 240,
       nowrap: true,
-      cellProps: {
-        dir: "auto",
-        class: isRtl.value ? "text-right" : "text-left",
-      },
+      // Only the hover title is local now: which side the ellipsis falls on is
+      // handled once for every truncating element in styles/main.scss.
+      cellProps: ({ item }: { item: Document }) => ({ title: item.title }),
     },
     {
       title: t("admin.documents.description"),
@@ -103,14 +100,9 @@
       // styling comes from .v-data-table-column--nowrap.
       maxWidth: 320,
       nowrap: true,
-      // The ellipsis goes at the cell's *logical* end, so an RTL cell holding
-      // LTR text clips the start and shows only the tail. dir="auto" takes the
-      // side from the description's own direction; useRtl() then pins the
-      // column to the UI edge, or rows would alternate alignment by script.
-      cellProps: {
-        dir: "auto",
-        class: isRtl.value ? "text-right" : "text-left",
-      },
+      // Empty string rather than the placeholder, so a description-less row
+      // gets no tooltip at all instead of one reading "-".
+      cellProps: ({ item }: { item: Document }) => ({ title: item.description ?? "" }),
     },
     // Sorts on the team's *name*, which is what the cell shows: the backend
     // maps this key to a correlated subselect against `teams`, the way it does
@@ -124,6 +116,7 @@
       // Team names are free text and can be long; same cap as creator.
       maxWidth: 160,
       nowrap: true,
+      cellProps: ({ item }: { item: Document }) => ({ title: item.team?.name ?? "" }),
     },
     // The *document's* creator — who made the folder. Each image carries its
     // own, shown on the document page, and the two often differ.
@@ -138,6 +131,7 @@
       sortable: true,
       maxWidth: 160,
       nowrap: true,
+      cellProps: ({ item }: { item: Document }) => ({ title: item.creator }),
     },
     // Sortable, even though `images_count` is not a column on `documents` - it
     // is withCount()'s select alias, which both MySQL and SQLite resolve in

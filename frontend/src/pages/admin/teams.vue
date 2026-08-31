@@ -2,13 +2,11 @@
   import type { Team } from "@/types/team";
   import { computed, onMounted, ref } from "vue";
   import { useI18n } from "vue-i18n";
-  import { useRtl } from "vuetify";
   import { useDateFormat } from "@/composables/useDateFormat";
   import { useNotifierStore } from "@/stores/notifier";
   import { useTeamStore } from "@/stores/team";
 
   const { t } = useI18n();
-  const { isRtl } = useRtl();
   const { formatDateTime } = useDateFormat();
   const teamStore = useTeamStore();
   const notifier = useNotifierStore();
@@ -64,15 +62,11 @@
       // ellipsis styling comes from .v-data-table-column--nowrap.
       maxWidth: 320,
       nowrap: true,
-      // The ellipsis goes at the cell's *logical* end, so an RTL cell holding
-      // LTR text clips the start and shows only the tail. dir="auto" takes the
-      // side from the description's own direction; useRtl() then pins the
-      // column to the UI edge, or rows would alternate alignment by script.
-      // Same pairing as the gallery cards.
-      cellProps: {
-        dir: "auto",
-        class: isRtl.value ? "text-right" : "text-left",
-      },
+      // Empty string rather than the placeholder, so a description-less row
+      // gets no tooltip at all instead of one reading "-".
+      cellProps: ({ item }: { item: Team }) => ({
+        title: item.description ?? "",
+      }),
     },
     { title: t("admin.teams.members"), key: "members_count", sortable: true },
     { title: t("admin.teams.creator"), key: "creator", sortable: true },
