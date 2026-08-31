@@ -11,18 +11,17 @@
     v-model="open"
     content-class="bg-surface-darken-2 rounded-lg"
     max-width="900"
-    scrollable
   >
-    <v-btn
-      class="ml-auto"
-      color="tertiary"
-      icon="mdi-close"
-      :title="t('gallery.close')"
-      variant="text"
-      @click="open = false"
-    />
+    <v-card class="p-2 pt-0 rounded-lg">
+      <v-btn
+        class="ml-auto"
+        color="tertiary"
+        icon="mdi-close"
+        :title="t('gallery.close')"
+        variant="text"
+        @click="open = false"
+      />
 
-    <v-card class="p-2 pt-0 rounded-none rounded-b-lg">
       <slot />
     </v-card>
   </v-dialog>

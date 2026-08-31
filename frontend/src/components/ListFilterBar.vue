@@ -51,7 +51,7 @@
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="flex flex-col gap-7">
     <!--
       Styled to match /admin/images so the screens read as one app; the server
       variant takes no `:search` prop, the term rides in the request.
@@ -91,7 +91,7 @@
       defaults to min-width:auto, so without it the chips refuse to shrink and
       spill past the card edge instead of scrolling inside their line.
     -->
-    <div class="mt-1 flex flex-wrap items-center gap-4">
+    <div class="mt-1 flex flex-wrap items-center gap-7">
       <v-chip-group
         v-model="filterChip"
         class="min-w-0 basis-full sm:basis-auto"

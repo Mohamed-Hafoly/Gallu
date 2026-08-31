@@ -130,7 +130,7 @@
     },
     "users": {
       "title": "Users",
-      "search": "Search users",
+      "search": "Search users by name, email or team",
       "id": "ID",
       "avatar": "Profile",
       "name": "Name",

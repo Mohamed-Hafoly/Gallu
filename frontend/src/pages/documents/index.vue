@@ -402,7 +402,7 @@
 </script>
 
 <template>
-  <v-container class="pt-3 bg-surface-darken-3" fluid>
+  <v-container class="flex flex-col gap-7 pt-7 bg-surface-darken-3" fluid>
     <!--
       Above the three branches below, not inside one: loading, empty and the
       grid are mutually exclusive, so a button placed in any of them would
@@ -412,7 +412,6 @@
     <v-btn
       v-if="canCreate"
       block
-      class="mb-3"
       color="tertiary"
       prepend-icon="mdi-file-plus"
       @click="createOpen = true"
@@ -502,7 +501,9 @@
           -->
           <v-card
             class="group flex flex-col h-full"
-            :class="selected.includes(doc.id) ? 'ring-2 ring-tertiary' : undefined"
+            :class="
+              selected.includes(doc.id) ? 'ring-2 ring-tertiary' : undefined
+            "
             @click="onCardClick(doc)"
           >
             <!--
