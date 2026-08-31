@@ -86,7 +86,7 @@
       "restoreFailed": "Could not restore the document",
       "restoreSelected": "Restore selected ({count})",
       "trashedTitle": "Pending deletion",
-      "trashedTitleNote": "Restoring a document also restores the images that were deleted with it.",
+      "trashedTitleNote": "Documents are permanently deleted after 30 days. Restoring a document also restores the images that were deleted with it.",
       "trashedEmpty": "Nothing pending deletion",
       "bulkDeleteConfirm": "Delete the selected documents ({count})? Their images are moved to pending deletion with them, and both can be restored.",
       "bulkDeleted": "Selected documents deleted ({count})",
@@ -258,7 +258,13 @@
     "searchImages": "Search images by title, description or creator",
     "sortBy": "Sort by",
     "sortDirection": "Sort direction",
-    "select": "Select images"
+    "select": "Select images",
+    "allDocuments": "All",
+    "trashedDocuments": "Recently deleted",
+    "searchDocuments": "Search documents by title, description or creator",
+    "selectDocuments": "Select documents",
+    "restoreDocument": "Restore document",
+    "noDocumentsFound": "No documents match your search."
   },
   "profile": {
     "title": "Profile Information",

@@ -107,12 +107,6 @@ function deleteButton(wrapper: Wrapper) {
     .find((button) => button.props("icon") === "mdi-delete");
 }
 
-function uploadButton(wrapper: Wrapper) {
-  return wrapper
-    .findAllComponents({ name: "VBtn" })
-    .find((button) => button.props("icon") === "mdi-image-plus");
-}
-
 function confirmDialog(wrapper: Wrapper) {
   return wrapper.findComponent({ name: "ConfirmDialog" });
 }
@@ -335,52 +329,17 @@ describe("delete confirmation", () => {
 });
 
 /**
- * Upload moved out of the gallery and into the header row, so the page owns the
- * button while the gallery keeps the dialog and the reload it triggers.
+ * Upload lives inside ImageGallery as a block button, alongside its dialog and
+ * the reload that follows one — so this page hands the gallery a document id
+ * and reaches for nothing on it. ImageGallery.spec covers the button itself.
  */
-describe("upload button", () => {
-  // No permission gate, unlike edit and delete: ImagePolicy::create is
-  // "member of the document's team", and the document is only visible to that
-  // team at all, so anyone who can read this page may upload.
-  it("is offered to a member as well as an admin", async () => {
-    expect(uploadButton(await mountDetail(makeUser("member")))).toBeDefined();
-    expect(uploadButton(await mountDetail(makeUser("admin")))).toBeDefined();
-  });
+describe("the gallery", () => {
+  it("is handed the document id and nothing else", async () => {
+    const wrapper = await mountDetail(makeUser("member"));
+    const gallery = wrapper.findComponent({ name: "ImageGallery" });
 
-  it("is tertiary, beside the primary edit", async () => {
-    const wrapper = await mountDetail(makeUser("admin"));
-
-    expect(uploadButton(wrapper)!.props("color")).toBe("tertiary");
-  });
-
-  /**
-   * ImageGallery is stubbed here, so the exposed method is stubbed too — this
-   * asserts the page reaches for `openCreate` on whatever the ref holds, which
-   * is the whole coupling surface between the two.
-   */
-  it("opens the gallery's create dialog", async () => {
-    const openCreate = vi.fn();
-
-    fetchDocument.mockResolvedValue(makeDocument());
-
-    const wrapper = mountWithPlugins(
-      DocumentDetail,
-      {
-        global: {
-          stubs: {
-            // An options-api stub: its methods land on the instance, which is
-            // what a template ref reaches, standing in for the real
-            // component's defineExpose({ openCreate }).
-            ImageGallery: { template: "<div />", methods: { openCreate } },
-          },
-        },
-      },
-      { auth: { user: makeUser("admin") } },
-    );
-    await flushPromises();
-
-    await uploadButton(wrapper)!.trigger("click");
-
-    expect(openCreate).toHaveBeenCalled();
+    expect(gallery.exists()).toBe(true);
+    // The route param, coerced — it is the single source of the id.
+    expect(gallery.props("documentId")).toBe(1);
   });
 });

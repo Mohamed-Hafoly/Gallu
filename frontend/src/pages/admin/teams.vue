@@ -214,7 +214,7 @@
 </script>
 
 <template>
-  <v-container fluid>
+  <v-container class="bg-surface-darken-3" fluid>
     <v-text-field
       v-model="search"
       bg-color="surface-darken-2"

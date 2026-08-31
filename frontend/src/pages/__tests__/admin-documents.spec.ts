@@ -397,4 +397,80 @@ describe("image count column", () => {
     expect(table(wrapper).props("showExpand")).toBeFalsy();
     expect(wrapper.find(".mdi-chevron-down").exists()).toBe(false);
   });
+
+  /**
+   * The column sorts on withCount()'s `images_count` select alias, which
+   * DocumentController::SORTABLE lists — it used to be sortable: false, back
+   * when sending that key was a 422.
+   *
+   * Asserted on the header rather than only through a synthetic update:options,
+   * because the emit-driven case below would pass whatever the flag said.
+   */
+  function imageCountHeader(headers: unknown) {
+    return (headers as { key: string; sortable?: boolean }[]).find(
+      (header) => header.key === "images_count",
+    )!;
+  }
+
+  it("lets both tables sort by the count", async () => {
+    const wrapper = await mountPage();
+
+    expect(imageCountHeader(table(wrapper).props("headers")).sortable).toBe(
+      true,
+    );
+    // trashedHeaders is derived from headers, so this is what keeps them
+    // agreeing rather than a second declaration.
+    expect(imageCountHeader(trashTable(wrapper).props("headers")).sortable).toBe(
+      true,
+    );
+  });
+
+  it("sends the count sort to the endpoint", async () => {
+    const wrapper = await mountPage();
+
+    table(wrapper).vm.$emit("update:options", {
+      page: 1,
+      itemsPerPage: 10,
+      sortBy: [{ key: "images_count", order: "desc" }],
+    });
+    await flushPromises();
+
+    expect(lastParams()).toMatchObject({
+      sort_by: "images_count",
+      sort_order: "desc",
+    });
+  });
+});
+
+/**
+ * The team column sorts on the team's name, through a correlated subselect the
+ * backend maps `team` to — it was sortable: false while the only candidate was
+ * the `team_id` column, which would have ordered by insertion.
+ */
+describe("team column", () => {
+  function teamHeader(headers: unknown) {
+    return (headers as { key: string; sortable?: boolean }[]).find(
+      (header) => header.key === "team",
+    )!;
+  }
+
+  it("lets both tables sort by the team", async () => {
+    const wrapper = await mountPage();
+
+    expect(teamHeader(table(wrapper).props("headers")).sortable).toBe(true);
+    expect(teamHeader(trashTable(wrapper).props("headers")).sortable).toBe(true);
+  });
+
+  it("sends the team sort to the endpoint", async () => {
+    const wrapper = await mountPage();
+
+    table(wrapper).vm.$emit("update:options", {
+      page: 1,
+      itemsPerPage: 10,
+      sortBy: [{ key: "team", order: "asc" }],
+    });
+    await flushPromises();
+
+    expect(lastParams()).toMatchObject({ sort_by: "team", sort_order: "asc" });
+  });
 });

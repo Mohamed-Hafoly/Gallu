@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AvatarPicker: typeof import('./src/components/Profile/AvatarPicker.vue')['default']
+    BulkActionBar: typeof import('./src/components/BulkActionBar.vue')['default']
     CategoriesField: typeof import('./src/components/Images/Fields/CategoriesField.vue')['default']
     CategoryChips: typeof import('./src/components/Images/Fields/Category/CategoryChips.vue')['default']
     CategoryCreateDialog: typeof import('./src/components/Categories/CategoryCreateDialog.vue')['default']
@@ -31,6 +32,7 @@ declare module 'vue' {
     ImageGallery: typeof import('./src/components/Images/ImageGallery.vue')['default']
     ImagePicker: typeof import('./src/components/Images/Fields/ImagePicker.vue')['default']
     ImageStage: typeof import('./src/components/Images/Fields/ImageStage.vue')['default']
+    ListFilterBar: typeof import('./src/components/ListFilterBar.vue')['default']
     MemberPicker: typeof import('./src/components/Teams/MemberPicker.vue')['default']
     MemberRows: typeof import('./src/components/Teams/MemberRows.vue')['default']
     ReadOnlyField: typeof import('./src/components/Images/Fields/ReadOnlyField.vue')['default']

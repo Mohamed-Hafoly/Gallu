@@ -25,11 +25,6 @@
   const document = ref<Document | null>(null);
   const loading = ref(true);
   const forbidden = ref(false);
-  // No separate `editing` ref, unlike the documents list: there is exactly one
-  // document on this page and it is already held above.
-  /** Only for openCreate() — the upload button lives up in the header row. */
-  const gallery = ref<{ openCreate: () => void } | null>(null);
-
   const editOpen = ref(false);
   const deleteOpen = ref(false);
   const deleting = ref(false);
@@ -119,19 +114,6 @@
             card, nothing wraps these in a click handler.
           -->
           <div class="flex items-center gap-3">
-            <!--
-              No permission gate, unlike its neighbours: ImagePolicy::create is
-              "member of the document's team", and the document is only visible
-              to that team at all, so anyone reading this page may upload.
-            -->
-            <v-btn
-              color="tertiary"
-              icon="mdi-image-plus"
-              size="x-small"
-              :title="t('gallery.upload')"
-              variant="flat"
-              @click="gallery?.openCreate()"
-            />
 
             <v-btn
               v-if="canEdit(document)"
@@ -173,10 +155,11 @@
       </div>
 
       <!--
-        Reached for exactly one thing: opening its create dialog from the
-        header. The dialog and the reload it triggers stay inside the gallery.
+        Self-contained: the gallery owns its own paging, chips, upload button,
+        dialogs and the reloads they trigger, so this page hands it the document
+        id and nothing else.
       -->
-      <ImageGallery ref="gallery" :document-id="documentId" />
+      <ImageGallery :document-id="documentId" />
 
       <!--
         No v-if of its own: this whole branch is already `v-else-if="document"`,

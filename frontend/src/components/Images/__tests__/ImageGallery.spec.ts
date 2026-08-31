@@ -625,6 +625,62 @@ describe("search and sort", () => {
  * What this guards is the requirement, not the styling: sorting stays at the
  * end of whatever line it is on.
  */
+/**
+ * Upload is a block button inside the grid, above the cards — the same shape
+ * the documents listing gives its create button. It used to be an icon in the
+ * document page's header, reached through defineExpose; the page now hands the
+ * gallery a document id and nothing else.
+ */
+describe("upload button", () => {
+  function uploadButton(wrapper: ReturnType<typeof mountGallery>) {
+    return wrapper
+      .findAllComponents({ name: "VBtn" })
+      .find((button) => button.props("prependIcon") === "mdi-image-plus");
+  }
+
+  // No permission gate, unlike edit and delete: ImagePolicy::create is "member
+  // of the document's team", and the document is only visible to that team at
+  // all, so anyone who can read the page may upload.
+  it("is offered to a member as well as an admin", async () => {
+    const asMember = mountGallery({ documentId: 13 }, "member");
+    const asAdmin = mountGallery({ documentId: 13 }, "admin");
+    await flushPromises();
+
+    expect(uploadButton(asMember)).toBeDefined();
+    expect(uploadButton(asAdmin)).toBeDefined();
+  });
+
+  // /gallery renders no ImageCreateDialog, having no document to attach an
+  // upload to, so a button there would open nothing.
+  it("is absent outside a document", async () => {
+    const wrapper = mountGallery({}, "admin");
+    await flushPromises();
+
+    expect(uploadButton(wrapper)).toBeUndefined();
+  });
+
+  // Every row on that chip is already deleted; an upload would land in a
+  // listing that cannot show it.
+  it("is absent on the trash chip", async () => {
+    router.route!.query = { trashed: "only" };
+    const wrapper = mountGallery({ documentId: 13 }, "admin");
+    await flushPromises();
+
+    expect(uploadButton(wrapper)).toBeUndefined();
+  });
+
+  it("opens the create dialog", async () => {
+    const wrapper = mountGallery({ documentId: 13 }, "admin");
+    await flushPromises();
+
+    await uploadButton(wrapper)!.trigger("click");
+
+    expect(
+      wrapper.findComponent({ name: "ImageCreateDialog" }).props("modelValue"),
+    ).toBe(true);
+  });
+});
+
 describe("filter row layout", () => {
   function filterRow(wrapper: ReturnType<typeof mountGallery>) {
     return wrapper.findComponent({ name: "VChipGroup" }).element.parentElement!;

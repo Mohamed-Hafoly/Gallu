@@ -68,9 +68,10 @@
     // The API's name for the is_super_admin column, which is what the backend
     // actually sorts on.
     { title: t("admin.users.role"), key: "role", sortable: true },
-    // Not sortable: the team lives in the role pivot, not on `users`, so the
-    // backend has no column to order by.
-    { title: t("admin.users.team"), key: "team", sortable: false },
+    // The team lives in the role pivot rather than on `users`, but the listing
+    // already selects its name through withTeamAssignment() - so the backend
+    // sorts on that alias, and this orders by the name the cell shows.
+    { title: t("admin.users.team"), key: "team", sortable: true },
     { title: t("common.createdAt"), key: "created_at", sortable: true },
     { title: t("common.updatedAt"), key: "updated_at", sortable: true },
     { title: t("admin.users.actions"), key: "actions", sortable: false },
@@ -133,9 +134,10 @@
     return user.id === authStore.user?.id;
   }
 
-
   function rowProps({ item }: { item: User }) {
-    return item.is_super_admin ? { class: "bg-primary-darken-1 text-on-primary" } : {};
+    return item.is_super_admin
+      ? { class: "bg-primary-darken-1 text-on-primary" }
+      : {};
   }
 
   function openCreate() {
@@ -213,7 +215,7 @@
 </script>
 
 <template>
-  <v-container fluid>
+  <v-container class="bg-surface-darken-3" fluid>
     <v-text-field
       v-model="search"
       bg-color="surface-darken-2"
@@ -277,7 +279,6 @@
             @click="bulkDeleteOpen = true"
           >
             {{ t("admin.users.deleteSelected", { count: selected.length }) }}
-
           </v-btn>
         </div>
       </template>
@@ -360,7 +361,6 @@
     />
   </v-container>
 </template>
-
 
 <route lang="json">
 {

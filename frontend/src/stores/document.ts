@@ -25,11 +25,28 @@ export interface DocumentListParams {
   search?: string;
   /** Absent for live rows; "only" for the pending-deletion table. */
   trashed?: "with" | "only";
+  /**
+   * Asks for each row's four newest images, for the card grid's 2x2 cover. The
+   * admin table omits it and gets a count alone.
+   *
+   * 1 rather than true: axios serialises a boolean as the string "true", which
+   * Laravel's `boolean` rule rejects — it takes 1, 0, "1" and "0" only. Typed
+   * as the literal so the wrong value cannot be sent, since a 422 here is a
+   * blank grid rather than a visible error.
+   */
+  cover?: 1;
 }
 
 export interface DocumentPage {
   items: Document[];
   total: number;
+  /**
+   * Where the listing stops. The infinite-scrolled grid needs this rather than
+   * inferring the end from a running item count, which would keep firing one
+   * doomed request past the last page whenever the total is an exact multiple
+   * of the page size.
+   */
+  lastPage: number;
 }
 
 /**
@@ -55,19 +72,26 @@ export const useDocumentStore = defineStore("document", () => {
   }
 
   /**
-   * One page of the admin table. Unlike fetchDocuments() this pages, sorts and
-   * searches server-side, so the total has to come back alongside the rows for
-   * the table's footer — same shape as fetchImagePage in stores/image.ts.
+   * One page of a server-paged listing — the admin table and the documents card
+   * grid both. Unlike fetchDocuments() this pages, sorts and searches
+   * server-side, so the total has to come back alongside the rows for the
+   * table's footer and the chips' counts — same shape as fetchImagePage in
+   * stores/image.ts.
    *
-   * No `cover`: the table draws no thumbnails and asks the image store for a
-   * document's images only when its row is expanded.
+   * `cover` is the caller's to send: the table draws no thumbnails and asks the
+   * image store for a document's images only when its row is expanded, while
+   * the card grid needs the four covers on every row.
    */
   async function fetchDocumentPage(
     params: DocumentListParams,
   ): Promise<DocumentPage> {
     const { data } = await api.get("/api/documents", { params });
 
-    return { items: data.data as Document[], total: data.meta.total as number };
+    return {
+      items: data.data as Document[],
+      total: data.meta.total as number,
+      lastPage: data.meta.last_page as number,
+    };
   }
 
   async function createDocument(payload: CreateDocumentPayload) {

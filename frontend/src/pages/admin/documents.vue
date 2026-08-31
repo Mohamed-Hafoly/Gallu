@@ -112,13 +112,15 @@
         class: isRtl.value ? "text-right" : "text-left",
       },
     },
-    // Not sortable, and deliberately absent from DocumentController::SORTABLE:
-    // ordering by the `team_id` column would sort by insertion order rather
-    // than by the name the cell shows, which reads as a broken sort.
+    // Sorts on the team's *name*, which is what the cell shows: the backend
+    // maps this key to a correlated subselect against `teams`, the way it does
+    // `creator` against `users`. Ordering by the `team_id` column instead would
+    // sort by insertion and read as broken, which is why it went unsorted until
+    // the subselect existed.
     {
       title: t("admin.documents.team"),
       key: "team",
-      sortable: false,
+      sortable: true,
       // Team names are free text and can be long; same cap as creator.
       maxWidth: 160,
       nowrap: true,
@@ -137,17 +139,20 @@
       maxWidth: 160,
       nowrap: true,
     },
-    // Not sortable, and it cannot be: DocumentController::SORTABLE holds no
-    // `images_count`, and IndexDocumentRequest validates sort_by against it, so
-    // a sortable header here would send a value the API answers with a 422.
+    // Sortable, even though `images_count` is not a column on `documents` - it
+    // is withCount()'s select alias, which both MySQL and SQLite resolve in
+    // ORDER BY, so the backend needs no branch for it the way `creator` needs
+    // its subselect. DocumentController::SORTABLE lists it, so the header can
+    // send it.
     //
-    // Counts live images only - the relation carries Image's soft-delete scope -
-    // so a document whose images are all binned reads 0 while its page's
-    // "Recently deleted" chip still lists them.
+    // The pending-deletion table sorts on the same number it shows: a trashed
+    // listing counts through withTrashed(), because Document::booted() takes a
+    // document's images down with it and the default scope would report 0 for
+    // every row.
     {
       title: t("admin.documents.imageCount"),
       key: "images_count",
-      sortable: false,
+      sortable: true,
     },
     { title: t("common.createdAt"), key: "created_at", sortable: true },
     { title: t("common.updatedAt"), key: "updated_at", sortable: true },
@@ -156,7 +161,11 @@
 
   const trashedHeaders = computed(() => [
     ...headers.value.filter((header) => header.key !== "actions"),
-    { title: t("admin.documents.deletedAt"), key: "deleted_at", sortable: true },
+    {
+      title: t("admin.documents.deletedAt"),
+      key: "deleted_at",
+      sortable: true,
+    },
     { title: t("admin.documents.actions"), key: "actions", sortable: false },
   ]);
 
@@ -350,7 +359,7 @@
 </script>
 
 <template>
-  <v-container fluid>
+  <v-container class="bg-surface-darken-3" fluid>
     <v-text-field
       v-model="search"
       bg-color="surface-darken-2"
@@ -459,15 +468,6 @@
         <div class="flex gap-1">
           <v-btn
             color="tertiary"
-            icon="mdi-open-in-new"
-            size="small"
-            :title="t('admin.documents.view')"
-            :to="{ name: '/documents/[id]', params: { id: item.id } }"
-            variant="text"
-          />
-
-          <v-btn
-            color="tertiary"
             icon="mdi-pencil"
             size="small"
             :title="t('common.edit')"
@@ -485,7 +485,6 @@
           />
         </div>
       </template>
-
     </v-data-table-server>
 
     <v-data-table-server

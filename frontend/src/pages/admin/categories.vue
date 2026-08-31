@@ -66,7 +66,7 @@
       sortable: true,
     },
     { title: t("admin.categories.nameArabic"), key: "name_ar", sortable: true },
-    { title: t("admin.categories.creator"), key: "creator", sortable: false },
+    { title: t("admin.categories.creator"), key: "creator", sortable: true },
     { title: t("common.createdAt"), key: "created_at", sortable: true },
     { title: t("common.updatedAt"), key: "updated_at", sortable: true },
   ]);
@@ -204,7 +204,7 @@
 </script>
 
 <template>
-  <v-container fluid>
+  <v-container class="bg-surface-darken-3" fluid>
     <v-text-field
       v-model="search"
       bg-color="surface-darken-2"
