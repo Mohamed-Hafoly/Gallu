@@ -9,9 +9,12 @@ use App\Http\Requests\UpdateUserRequest;
 use App\Http\Resources\UserResource;
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -57,26 +60,33 @@ class UserController extends Controller
         $sortBy = $request->input('sort_by') ?: 'id';
         $direction = $request->input('sort_order') ?: 'asc';
 
-        $query = User::query()
-            // The resource's avatar_url / has_avatar read the media relation,
-            // which is a query per row without this.
-            ->with('media')
-            // Same reason: role and team both come off teamAssignment(), which
-            // would otherwise query per row.
-            ->withTeamAssignment()
-            // Grouped, as in the sibling controllers, so the ORs stay part of
-            // the search rather than widening the listing.
+        $builder = User::search(
+            // An empty term is no search at all: Scout's database engine leaves
+            // the query untouched when the term is blank, so this needs no
+            // conditional of its own - only the callback does, or the team half
+            // below would LIKE '%%' and match every row.
+            $search,
+            // The name and email halves come from User::toSearchableArray(),
+            // which the engine turns into one grouped OR. The team name cannot
+            // join them there - it is not a `users` column - so it arrives
+            // here: the database engine hands this callback the very same
+            // query, after that group, making the whole thing read
+            // `(name OR email) OR team`.
             //
-            // The team half is a correlated EXISTS on the role pivot, not the
-            // `team_assignment_name` alias the sort below uses: an alias is
-            // resolvable in ORDER BY but not in WHERE. See
-            // User::scopeOrWhereTeamNameLike().
-            ->when($search !== '', fn ($builder) => $builder->where(
-                fn ($grouped) => $grouped
-                    ->where('name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%")
-                    ->orWhereTeamNameLike($search)
-            ))
+            // Note that passing a callback makes the engine skip Scout's own
+            // where()/whereIn() clauses. Nothing here uses them, and a filter
+            // added later belongs in query() below rather than there.
+            $search === '' ? null : fn (Builder $query) => $query->orWhereTeamNameLike($search),
+        )
+            // The engine applies this straight to the database query, so both
+            // eager loads land before the rows are read.
+            //
+            // The resource's avatar_url / has_avatar read the media relation,
+            // which is a query per row without the first; role and team both
+            // come off teamAssignment(), which is a query per row without the
+            // second. withTeamAssignment() also selects the alias the team sort
+            // below orders on.
+            ->query(fn (Builder $query) => $query->with('media')->withTeamAssignment())
             // Neither `role` nor `team` is a column on `users`. `role` is the
             // API's name for is_super_admin, so ascending puts plain users (0)
             // before super-admins (1); `team` sorts on the name the cell shows,
@@ -98,26 +108,35 @@ class UserController extends Controller
             // database order ties differently per page - so page 2 can repeat a
             // row from page 1 or skip one. DocumentController::index and
             // ImageController::index carry the same line.
+            //
+            // Scout's database engine appends an `id desc` of its own, but that
+            // is no substitute: it is skipped the moment any column is declared
+            // full-text, and it breaks ties the other way round, which would
+            // reorder the team sort for no reason.
             ->orderBy('id');
 
-        // No default for the normal path: paginate() falls back to the model's
-        // per-page when handed 0, which is what integer() returns for a missing
-        // param.
         $perPage = $request->integer('per_page');
-        $total = null;
 
         if ($perPage === self::ALL_PER_PAGE) {
-            // Not simply paginate(-1): a negative limit is dropped by the query
-            // builder while the offset is still emitted, and `OFFSET` without
-            // `LIMIT` is a syntax error in both SQLite and MySQL. Counting once
-            // and paginating by that keeps a single page and an honest
-            // meta.per_page — the total is handed back so paginate() does not
-            // run the same count a second time.
-            $total = $query->toBase()->getCountForPagination();
-            $perPage = max($total, 1);
+            // Scout's paginate() takes no pre-counted total to hand back, so
+            // the single "All" page is built from the result set rather than
+            // counted and then fetched again. get() applies no limit, so it is
+            // both the page and the count; max() keeps per_page positive when
+            // a search matches nothing.
+            $results = $builder->get();
+
+            return UserResource::collection(new LengthAwarePaginator(
+                $results,
+                $results->count(),
+                max($results->count(), 1),
+                1,
+                ['path' => Paginator::resolveCurrentPath(), 'query' => $request->query()],
+            ));
         }
 
-        return UserResource::collection($query->paginate($perPage, total: $total));
+        // Null rather than 0 for a missing param - which is what integer()
+        // returns - so pagination falls back to the model's per-page.
+        return UserResource::collection($builder->paginate($perPage ?: null));
     }
 
     public function store(StoreUserRequest $request): UserResource

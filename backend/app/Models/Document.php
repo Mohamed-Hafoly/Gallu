@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Laravel\Scout\Attributes\SearchUsingFullText;
+use Laravel\Scout\Builder as ScoutBuilder;
+use Laravel\Scout\Searchable;
 
 /**
  * A titled group of existing images.
@@ -22,7 +25,19 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Document extends Model
 {
     /** @use HasFactory<DocumentFactory> */
-    use HasFactory, SoftDeletes;
+    use HasFactory, Searchable, SoftDeletes;
+
+    /**
+     * Alias for the join onto `users` that puts the creator's name inside
+     * Scout's search group. Shared with toSearchableArray() so the two cannot
+     * drift.
+     */
+    public const SEARCH_CREATOR = 'search_creator';
+
+    /**
+     * Alias for the join onto `teams`, as above.
+     */
+    public const SEARCH_TEAM = 'search_team';
 
     /**
      * The attributes that are mass assignable.
@@ -80,6 +95,95 @@ class Document extends Model
             // it fires no Image events.
             $document->images()->onlyTrashed()->update(['deleted_at' => null]);
         });
+    }
+
+    /**
+     * The columns Scout searches.
+     *
+     * `description` is matched with MATCH ... AGAINST through the FULLTEXT
+     * index its migration adds - so it matches whole *words*, ignores terms
+     * under innodb_ft_min_token_size (3 by default), and finds nothing for a
+     * mid-word fragment. Everything else here is a `%term%` LIKE, `title`
+     * included, which is what keeps partial-title search working.
+     *
+     * The dotted keys are left alone by qualifyColumn() and resolve against the
+     * aliases newScoutQuery() joins. Their values are never read - the database
+     * engine takes only the keys and queries the tables directly - hence null
+     * rather than a relation access that would be an N+1 if it ever ran.
+     *
+     * `id` is deliberately absent, unlike User's. Scout takes its searchable
+     * columns from this method, which belongs to the class rather than to the
+     * query, so an id clause could not be limited to the admin table - the
+     * gallery calls the same endpoint. Adding it in DocumentController instead
+     * is worse: it would have to OR at the top level, where it would escape
+     * scopeVisibleTo()'s AND and let a member fetch any document by guessing a
+     * number. Read the note on newScoutQuery() before reconsidering.
+     *
+     * @return array<string, mixed>
+     */
+    #[SearchUsingFullText(['description'])]
+    public function toSearchableArray(): array
+    {
+        return [
+            'title' => $this->title,
+            'description' => $this->description,
+            self::SEARCH_CREATOR.'.name' => null,
+            self::SEARCH_TEAM.'.name' => null,
+        ];
+    }
+
+    /**
+     * The query Scout's database engine builds its search on.
+     *
+     * This exists so the creator and team names can sit *inside* the engine's
+     * OR group rather than beside it. That is a correctness requirement, not a
+     * tidiness one: the engine appends both its search() callback and its
+     * query() callback at the top level, so ORing the two relations in either
+     * of those would compile to
+     *
+     *     WHERE (title LIKE ? OR MATCH(description) ...) OR EXISTS(...) AND team_id = ?
+     *
+     * and AND binds tighter than OR. Eloquent does soften this: callScope()
+     * nests the existing wheres before a local scope adds its own, so
+     * scopeVisibleTo() as written today would still wrap that OR. But that
+     * safety is incidental - it holds only while visibleTo() remains a scope
+     * *and* stays the last thing applied, and an OR added after it leaks
+     * immediately, which DocumentCrudTest's "keeps a search inside the callers
+     * team" demonstrates. Joining here instead keeps every clause inside the one
+     * group the engine already wraps, so the team scope ANDs with the whole of
+     * it whatever else is bolted on later.
+     *
+     * Both joins are many-to-one, so neither can duplicate a row - which is why
+     * a join is safe here even though the *sorts* in DocumentController::index()
+     * must stay correlated subselects. The team side is a LEFT join because
+     * documents.team_id is nullable, and carries no deleted_at filter on
+     * purpose: a document that went down with its team is still findable by
+     * that team's name, which is what the withTrashed() on the old orWhereHas
+     * did.
+     *
+     * Aliased rather than joined bare, so nothing collides with the `users` and
+     * `teams` those sort subselects bring into scope.
+     */
+    public function newScoutQuery(ScoutBuilder $builder): Builder
+    {
+        // Nothing to search means nothing to join: the listing is served
+        // unsearched far more often than not.
+        if (blank($builder->query)) {
+            return static::query();
+        }
+
+        return static::query()
+            // Required once anything is joined, or the joined `id` columns
+            // overwrite documents.id as the row is hydrated.
+            ->select($this->getTable().'.*')
+            ->join(
+                'users as '.self::SEARCH_CREATOR,
+                self::SEARCH_CREATOR.'.id', '=', 'documents.user_id',
+            )
+            ->leftJoin(
+                'teams as '.self::SEARCH_TEAM,
+                self::SEARCH_TEAM.'.id', '=', 'documents.team_id',
+            );
     }
 
     public function user(): BelongsTo

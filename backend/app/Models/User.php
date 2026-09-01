@@ -14,6 +14,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Laravel\Scout\Searchable;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
@@ -24,7 +25,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements HasMedia
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasRoles, InteractsWithMedia, Notifiable;
+    use HasFactory, HasRoles, InteractsWithMedia, Notifiable, Searchable;
 
     /**
      * The media collection holding the user's profile image.
@@ -76,6 +77,39 @@ class User extends Authenticatable implements HasMedia
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_super_admin' => 'boolean',
+        ];
+    }
+
+    /**
+     * The columns Scout searches, LIKEd with a wildcard on either side by the
+     * `database` engine.
+     *
+     * Only real `users` columns belong here: the engine qualifies every key
+     * onto the model's own table, so a key naming anything else resolves to a
+     * column that does not exist. That is why the team name is missing - it
+     * lives behind `model_has_roles`, and rides into the same OR group through
+     * the engine callback in UserController::index(). See
+     * scopeOrWhereTeamNameLike().
+     *
+     * `id` is listed so the admin can jump straight to a row by the number the
+     * table shows. The engine treats it specially rather than LIKEing it: when
+     * the whole term is digits it matches the key by *equality* and drops the
+     * LIKE for this column, so "145" finds user 145 and not user 1450. A term
+     * that is not all digits leaves the id clause a LIKE that matches nothing,
+     * which is the intended no-op.
+     *
+     * The values are unused by the `database` engine, which reads only the
+     * keys and queries the table directly - there is no index to import or
+     * keep in sync, and nothing to re-index when a team is renamed or binned.
+     *
+     * @return array<string, mixed>
+     */
+    public function toSearchableArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'email' => $this->email,
         ];
     }
 
@@ -184,8 +218,11 @@ class User extends Authenticatable implements HasMedia
     /**
      * Match a user whose live team's name contains the term.
      *
-     * `or`, because this belongs inside the users search's grouped where,
-     * beside the name and email clauses.
+     * `or`, because this is the third clause of the users search, beside the
+     * name and email ones toSearchableArray() declares. Scout's database engine
+     * adds those two as a single nested group and then hands this scope's
+     * caller - the engine callback in UserController::index() - the same query,
+     * so an `or` here reads as `(name OR email) OR team`.
      *
      * An EXISTS rather than the `team_assignment_name` alias withTeamAssignment()
      * already selects: an alias is resolvable in ORDER BY - which is how the

@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Laravel\Scout\Attributes\SearchUsingFullText;
+use Laravel\Scout\Builder as ScoutBuilder;
+use Laravel\Scout\Searchable;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
@@ -16,12 +19,19 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
 class Image extends Model implements HasMedia
 {
     /** @use HasFactory<ImageFactory> */
-    use HasFactory, InteractsWithMedia, SoftDeletes;
+    use HasFactory, InteractsWithMedia, Searchable, SoftDeletes;
 
     /**
      * The media collection holding the image's own uploaded file.
      */
     public const IMAGES_COLLECTION = 'images';
+
+    /**
+     * Alias for the join onto `users` that puts the creator's name inside
+     * Scout's search group. Shared with toSearchableArray() so the two cannot
+     * drift.
+     */
+    public const SEARCH_CREATOR = 'search_creator';
 
     /**
      * Keep in sync with frontend/src/composables/useValidationRules.ts.
@@ -39,6 +49,87 @@ class Image extends Model implements HasMedia
         'title',
         'description',
     ];
+
+    /**
+     * The columns Scout searches.
+     *
+     * `description` is matched with MATCH ... AGAINST through the FULLTEXT index
+     * its migration adds - so it matches whole *words*, ignores terms under
+     * innodb_ft_min_token_size (3 by default) and anything on InnoDB's stopword
+     * list, and finds nothing for a mid-word fragment. `title` is a `%term%`
+     * LIKE, which is what keeps partial-title search working.
+     *
+     * The dotted key is left alone by qualifyColumn() and resolves against the
+     * alias newScoutQuery() joins. Its value is never read - the database engine
+     * takes only the keys and queries the tables directly - hence null rather
+     * than a relation access that would be an N+1 if it ever ran.
+     *
+     * Two columns are deliberately absent. `id`, as on Document. And
+     * `document_id`, which this listing used to match exactly for an all-digit
+     * term: Scout can only LIKE a declared column, and `document_id LIKE '%1%'`
+     * would make a search for "1" match documents 1, 10, 11 and 21 - the broken
+     * filter the old comment here rejected. Keeping the exact form would mean
+     * ORing it through the engine callback at the top level, beside this group
+     * rather than inside it, which is the pattern Document::newScoutQuery()
+     * explains at length. The gallery loses nothing: it is always pinned to one
+     * document through the `document_id` *filter*, so a free-text id could
+     * never narrow anything there.
+     *
+     * @return array<string, mixed>
+     */
+    #[SearchUsingFullText(['description'])]
+    public function toSearchableArray(): array
+    {
+        return [
+            'title' => $this->title,
+            'description' => $this->description,
+            self::SEARCH_CREATOR.'.name' => null,
+        ];
+    }
+
+    /**
+     * The query Scout's database engine builds its search on.
+     *
+     * This exists so the creator's name can sit *inside* the engine's OR group
+     * rather than beside it. That is a correctness requirement, not a tidiness
+     * one: the engine appends both its search() callback and its query()
+     * callback at the top level, so ORing the relation in either would compile
+     * to
+     *
+     *     WHERE (title LIKE ? OR MATCH(description) ...) OR EXISTS(...) AND <scope>
+     *
+     * and AND binds tighter than OR. Eloquent does soften this - callScope()
+     * nests the existing wheres before a local scope adds its own, so
+     * scopeVisibleTo() would still wrap that OR today - but the safety is
+     * incidental, holding only while visibleTo() stays a scope *and* stays
+     * applied before the controller's plain filters. Joining here keeps every
+     * clause inside the one group the engine already wraps, so the team scope
+     * ANDs with the whole of it whatever is bolted on later.
+     *
+     * belongsTo, so the join is many-to-one and cannot duplicate a row - which
+     * is why a join is safe here even though the creator *sort* in
+     * ImageController::index() must stay a correlated subselect (it has to work
+     * on an unsearched listing, where there is no join at all). Inner rather
+     * than left, because images.user_id is NOT NULL. Aliased, so it cannot
+     * collide with the `users` that sort subselect brings into scope.
+     */
+    public function newScoutQuery(ScoutBuilder $builder): Builder
+    {
+        // Nothing to search means nothing to join: the gallery serves this
+        // listing unsearched far more often than not.
+        if (blank($builder->query)) {
+            return static::query();
+        }
+
+        return static::query()
+            // Required once anything is joined, or the joined `id` column
+            // overwrites images.id as the row is hydrated.
+            ->select($this->getTable().'.*')
+            ->join(
+                'users as '.self::SEARCH_CREATOR,
+                self::SEARCH_CREATOR.'.id', '=', 'images.user_id',
+            );
+    }
 
     public function user(): BelongsTo
     {

@@ -9,8 +9,11 @@ use App\Http\Resources\ImageResource;
 use App\Models\Document;
 use App\Models\Image;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
@@ -60,76 +63,93 @@ class ImageController extends Controller
         $sortBy = $request->input('sort_by') ?: 'id';
         $direction = $request->input('sort_order') ?: 'asc';
 
-        // Team-scoped, not owner-scoped: a member sees their teammates' images
-        // too, they simply cannot edit them.
-        $query = Image::query()
-            ->visibleTo($request->user())
+        // Which columns are searched is Image::toSearchableArray()'s to say, and
+        // the engine wraps them in one OR group. The creator's name is inside
+        // that group through the join Image::newScoutQuery() adds - deliberately
+        // not through search()'s callback, which appends at the top level where
+        // an OR would sit beside the group rather than within it. Read the note
+        // on newScoutQuery() before moving it.
+        //
+        // An empty term is no search at all: the engine leaves the query alone
+        // when the term is blank, so this needs no conditional.
+        $builder = Image::search($search)
+            // The bin, on the Scout builder rather than inside query() below.
+            // That placement is the whole point of scout.soft_delete being on:
+            // search() seeds a __soft_deleted = 0 where, withTrashed() drops it
+            // and onlyTrashed() flips it to 1, and the engine turns whichever
+            // survives into the matching Eloquent constraint.
+            //
+            // It must not move into query(). constrainForSoftDeletes() runs
+            // *after* that callback, so an Eloquent-level onlyTrashed() there is
+            // silently overridden and the bin comes back empty.
+            //
             // Widens which rows survive the soft-delete scope, never which team
-            // they belong to - visibleTo() has already narrowed that, and this
-            // runs after it. The gallery sends no `trashed`, so deleted images
+            // they belong to - visibleTo() narrows that inside query(), and an
+            // AND either way. The gallery sends no `trashed`, so deleted images
             // stay out of /gallery and /documents/{id}.
             ->when($trashed === 'with', fn ($builder) => $builder->withTrashed())
             ->when($trashed === 'only', fn ($builder) => $builder->onlyTrashed())
-            // Applied after the scope, never instead of it, so filtering by
-            // another team's document id returns nothing rather than leaking.
+            // Everything that must AND with the search. The database engine
+            // applies this straight to the query, so these are real constraints
+            // rather than post-filters - and they land outside the search group,
+            // which is exactly where the team scope has to be.
+            ->query(fn (Builder $query) => $query
+                // Team-scoped, not owner-scoped: a member sees their teammates'
+                // images too, they simply cannot edit them.
+                //
+                // First, so Eloquent's callScope() nests the search group before
+                // the plain filters below are appended beside it.
+                ->visibleTo($request->user())
+                // Applied after the scope, never instead of it, so filtering by
+                // another team's document id returns nothing rather than leaking.
+                ->when(
+                    $request->filled('document_id'),
+                    fn ($builder) => $builder->where('document_id', $request->integer('document_id')),
+                )
+                // A member's trash holds their own images; an admin's holds the
+                // team's. Narrowed rather than refused, the way scopeVisibleTo
+                // narrows rather than denying - a member has a trash, it is just
+                // smaller. Gate::allows() rather than a role check so Gate::before
+                // still lets a super-admin see everything.
+                ->when(
+                    $trashed !== null && ! Gate::allows('viewAllTrashed', Image::class),
+                    fn ($builder) => $builder->where('user_id', $request->user()->id),
+                )
+                // Same rule as document_id: a filter, applied after the scope, so
+                // it only ever narrows. `users.id` is the owner column's target
+                // and images.user_id is NOT NULL, so this is a plain equality
+                // with no null case to think about.
+                ->when(
+                    $request->input('owner') === self::OWNER_MINE,
+                    fn ($builder) => $builder->where('user_id', $request->user()->id),
+                )
+                ->with(['categories', 'media', 'user']))
+            // `creator` is the API's name for the owner's name, which lives on
+            // `users`. A correlated subselect rather than the join
+            // newScoutQuery() adds, because a sort must work on an unsearched
+            // listing too - where there is no join at all. Its own `users` is
+            // why that join is aliased.
             ->when(
-                $request->filled('document_id'),
-                fn ($builder) => $builder->where('document_id', $request->integer('document_id')),
+                $sortBy === self::CREATOR_SORT,
+                fn ($builder) => $builder->orderBy(
+                    User::select('name')->whereColumn('users.id', 'images.user_id'),
+                    $direction,
+                ),
+                fn ($builder) => $builder->orderBy($sortBy, $direction),
             )
-            // A member's trash holds their own images; an admin's holds the
-            // team's. Narrowed rather than refused, the way scopeVisibleTo
-            // narrows rather than denying - a member has a trash, it is just
-            // smaller. Gate::allows() rather than a role check so Gate::before
-            // still lets a super-admin see everything.
-            ->when(
-                $trashed !== null && ! Gate::allows('viewAllTrashed', Image::class),
-                fn ($builder) => $builder->where('user_id', $request->user()->id),
-            )
-            // Same rule as document_id: a filter, applied after the scope, so
-            // it only ever narrows. `users.id` is the owner column's target and
-            // images.user_id is NOT NULL, so this is a plain equality with no
-            // null case to think about.
-            ->when(
-                $request->input('owner') === self::OWNER_MINE,
-                fn ($builder) => $builder->where('user_id', $request->user()->id),
-            )
-            // Grouped, so the ORs cannot escape the scope above and turn a
-            // search into a cross-team read.
-            ->when($search !== '', fn ($builder) => $builder->where(
-                fn ($grouped) => $grouped
-                    ->where('title', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('user', fn ($user) => $user->where('name', 'like', "%{$search}%"))
-                    // Exact, and only for a numeric term: `like` on an integer
-                    // column would make a search for "1" match documents 1, 10,
-                    // 11 and 21, which reads as a broken filter.
-                    ->when(
-                        ctype_digit($search),
-                        fn ($grouped) => $grouped->orWhere('document_id', (int) $search),
-                    )
-            ))
-            ->with(['categories', 'media', 'user']);
-
-        // `creator` is the API's name for the owner's name, which lives on
-        // `users`. A correlated subselect rather than a join, so the sort cannot
-        // duplicate rows when an image has several media or categories - the
-        // same technique User::scopeWithTeamAssignment() uses.
-        $query->when(
-            $sortBy === self::CREATOR_SORT,
-            fn ($builder) => $builder->orderBy(
-                User::select('name')->whereColumn('users.id', 'images.user_id'),
-                $direction,
-            ),
-            fn ($builder) => $builder->orderBy($sortBy, $direction),
-        );
-
-        // A stable tie-break, and not optional once the feed can be sorted by a
-        // non-unique column. created_at is not unique - images inserted in one
-        // batch share it to the second - and LIMIT/OFFSET paging over a
-        // non-unique key lets the database order ties differently per page, so
-        // page 2 can repeat a row from page 1 or skip one. The document page's
-        // infinite scroll would show duplicates; the admin tables would too.
-        $query->orderBy('id');
+            // A stable tie-break, and not optional once the feed can be sorted
+            // by a non-unique column. created_at is not unique - images inserted
+            // in one batch share it to the second - and LIMIT/OFFSET paging over
+            // a non-unique key lets the database order ties differently per
+            // page, so page 2 can repeat a row from page 1 or skip one. The
+            // document page's infinite scroll would show duplicates; the admin
+            // tables would too.
+            //
+            // Scout's engine appends an id tie-break of its own only when no
+            // column is declared full-text, and `description` is - so on this
+            // model there is no implicit one at all. Qualified, because `id` is
+            // ambiguous once newScoutQuery() has joined.
+            ->orderBy('images.id');
 
         // Absent means *everything*, unlike IndexUserRequest's caller, which
         // always pages. This endpoint has a second caller - the gallery, which
@@ -139,20 +159,25 @@ class ImageController extends Controller
         // 0 cannot reach here: `not_in:0` makes it a 422, so integer() only
         // returns 0 for a missing param.
         $perPage = $request->integer('per_page');
-        $total = null;
 
         if ($perPage === self::ALL_PER_PAGE || $perPage === 0) {
-            // Not simply paginate(-1): a negative limit is dropped by the query
-            // builder while the offset is still emitted, and `OFFSET` without
-            // `LIMIT` is a syntax error in both SQLite and MySQL. Counting once
-            // and paginating by that keeps a single page and an honest
-            // meta.per_page - the total is handed back so paginate() does not
-            // run the same count a second time.
-            $total = $query->toBase()->getCountForPagination();
-            $perPage = max($total, 1);
+            // Scout's paginate() takes no pre-counted total to hand back, so the
+            // single page is built from the result set rather than counted and
+            // then fetched again. get() applies no limit, so it is both the page
+            // and the count; max() keeps per_page positive when a search matches
+            // nothing.
+            $results = $builder->get();
+
+            return ImageResource::collection(new LengthAwarePaginator(
+                $results,
+                $results->count(),
+                max($results->count(), 1),
+                1,
+                ['path' => Paginator::resolveCurrentPath(), 'query' => $request->query()],
+            ));
         }
 
-        return ImageResource::collection($query->paginate($perPage, total: $total));
+        return ImageResource::collection($builder->paginate($perPage));
     }
 
     public function store(StoreImageRequest $request): ImageResource

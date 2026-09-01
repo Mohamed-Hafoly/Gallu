@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\RoleName;
 use App\Models\Document;
 use App\Models\Image;
 use App\Models\Team;
@@ -611,7 +612,7 @@ it('matches a document through its trashed teams name', function () {
         ->assertJsonCount(1, 'data');
 });
 
-it('searches title, description and creator', function () {
+it('searches on the title', function () {
     ['admin' => $admin, 'team' => $team] = teamFixture();
     Document::factory()->for($admin)->create(['team_id' => $team->id, 'title' => 'Findable']);
 
@@ -620,6 +621,155 @@ it('searches title, description and creator', function () {
         ->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.title', 'Findable');
+});
+
+// The creator's name is not a column on `documents`. It reaches the search
+// through the alias Document::newScoutQuery() joins, which is what puts it
+// inside Scout's OR group rather than beside it.
+it('searches on the creator name', function () {
+    ['team' => $team, 'admin' => $admin] = teamFixture();
+    $admin->forceFill(['name' => 'Grace Hopper'])->save();
+
+    actingAs($admin)
+        ->getJson('/api/documents?search='.urlencode('ace Hopp'))
+        ->assertOk()
+        // The fixture's own document is the team's only one.
+        ->assertJsonCount(1, 'data');
+});
+
+// Document::toSearchableArray() leaves `id` out, unlike User's. Not an
+// oversight: the searchable columns belong to the model class, so an id clause
+// could not be limited to the admin table - the gallery calls this same
+// endpoint - and adding one in the controller would have to OR at the top
+// level, escaping scopeVisibleTo() and handing a member any document by number.
+it('does not match a document by id', function () {
+    seedRoles();
+
+    $team = Team::factory()->create(['name' => 'Bravo']);
+    $admin = User::factory()->create(['name' => 'Charlie']);
+    $admin->assignToTeam($team, RoleName::Admin);
+
+    // Digit-free throughout, or the title and name clauses would match the term
+    // on their own and the assertion would prove nothing.
+    $document = Document::factory()->for($admin)->create([
+        'team_id' => $team->id,
+        'title' => 'Alpha',
+        'description' => 'Brass levers',
+    ]);
+
+    actingAs($admin)
+        ->getJson('/api/documents?search='.$document->id)
+        ->assertOk()
+        ->assertJsonCount(0, 'data')
+        ->assertJsonPath('meta.total', 0);
+});
+
+// The one that matters. Scout adds its searchable columns as a nested OR group
+// and appends the query() callback at the top level, so visibleTo() ANDs with
+// the whole group - but only because the creator and team clauses are inside it
+// rather than ORed alongside. Were they ORed, `(...) OR EXISTS(...) AND team_id
+// = ?` would bind the scope to the last branch only and this would return rows.
+it('keeps a search inside the callers team', function () {
+    ['member' => $member] = teamFixture();
+
+    seedRoles();
+    $otherTeam = Team::factory()->create(['name' => 'Findable']);
+    $otherAdmin = User::factory()->create(['name' => 'Findable']);
+    $otherAdmin->assignToTeam($otherTeam, RoleName::Admin);
+
+    Document::factory()->for($otherAdmin)->create([
+        'team_id' => $otherTeam->id,
+        'title' => 'Findable',
+        'description' => 'Findable',
+    ]);
+
+    // Matches the other team's document by title, creator and team name at once
+    // - every LIKE branch of the group - and must still return nothing.
+    actingAs($member)
+        ->getJson('/api/documents?search=Findable')
+        ->assertOk()
+        ->assertJsonCount(0, 'data')
+        ->assertJsonPath('meta.total', 0);
+});
+
+// scout.soft_delete is on, so Scout owns the trashed state: search() seeds a
+// __soft_deleted = 0 where, the controller's withTrashed()/onlyTrashed() on the
+// *Scout* builder drop or flip it, and constrainForSoftDeletes() turns whichever
+// survives into the matching Eloquent constraint.
+//
+// The assertion below pins the config because the two halves only work
+// together. Turn it off and the seeded where disappears, leaving the builder
+// calls with nothing to act on; move the calls into query() and
+// constrainForSoftDeletes() - which runs *after* that callback - overrides them,
+// asking for deleted_at both null and not null so trashed=only returns nothing.
+// Either half alone is a silently empty bin.
+it('honours the trashed flag alongside a search', function () {
+    expect(config('scout.soft_delete'))->toBeTrue();
+
+    ['admin' => $admin, 'team' => $team, 'document' => $document] = teamFixture();
+    $document->update(['title' => 'Findable']);
+
+    $live = Document::factory()->for($admin)->create([
+        'team_id' => $team->id,
+        'title' => 'Findable too',
+    ]);
+
+    $document->delete();
+
+    $ids = fn (string $query) => actingAs($admin)
+        ->getJson('/api/documents?search=Findable&per_page=-1&'.$query)
+        ->assertOk()
+        ->json('data.*.id');
+
+    expect($ids(''))->toBe([$live->id]);
+    expect($ids('trashed=only'))->toBe([$document->id]);
+    expect($ids('trashed=with'))->toEqualCanonicalizing([$document->id, $live->id]);
+});
+
+// The engine appends an id tie-break of its own only when no column is declared
+// full-text - and `description` is - so this listing has no implicit one at all
+// and the controller's explicit orderBy('documents.id') is the only thing
+// keeping a paged, searched, tied sort from repeating or skipping rows.
+it('does not repeat a document across pages when the sort ties, while searching', function () {
+    ['admin' => $admin, 'team' => $team] = teamFixture();
+
+    Document::factory()->count(4)->for($admin)->create([
+        'team_id' => $team->id,
+        'title' => 'Findable',
+        // Tied to the second, which is what makes the tie-break load-bearing.
+        'created_at' => now(),
+    ]);
+
+    $ids = [];
+    foreach (range(1, 4) as $page) {
+        $ids = array_merge($ids, actingAs($admin)
+            ->getJson("/api/documents?search=Findable&sort_by=created_at&per_page=1&page={$page}")
+            ->assertOk()
+            ->json('data.*.id'));
+    }
+
+    expect($ids)->toHaveCount(4);
+    expect(array_unique($ids))->toHaveCount(4);
+});
+
+// The config applies whether or not a term was given, and the two paths differ:
+// addTextSearchConstraints() returns early on a blank term, so the unsearched
+// listing reaches constrainForSoftDeletes() by a different route.
+it('honours the trashed flag without a search', function () {
+    ['admin' => $admin, 'team' => $team, 'document' => $binned] = teamFixture();
+
+    $live = Document::factory()->for($admin)->create(['team_id' => $team->id]);
+    $binned->delete();
+
+    $ids = fn (string $query) => actingAs($admin)
+        ->getJson('/api/documents?per_page=-1&'.$query)
+        ->assertOk()
+        ->json('data.*.id');
+
+    expect($ids(''))->toBe([$live->id]);
+    expect($ids('search='))->toBe([$live->id]);
+    expect($ids('trashed=only'))->toBe([$binned->id]);
+    expect($ids('trashed=with'))->toEqualCanonicalizing([$binned->id, $live->id]);
 });
 
 // ---------------------------------------------------------------- restore

@@ -228,6 +228,92 @@ it('treats an empty search as no search at all', function () {
         ->assertJsonPath('meta.total', 4);
 });
 
+// Scout's database engine ORs on the primary key when the term is all digits
+// and the key is one of the searchable columns, which is why User's
+// toSearchableArray() lists `id`: the admin table shows the number, so typing
+// it should land on that row.
+it('matches a user by id', function () {
+    // Spelled out rather than left to the factory, whose names and emails carry
+    // digits of their own and would widen the result for the wrong reason.
+    $admin = User::factory()->superAdmin()->create(['name' => 'Ada Lovelace', 'email' => 'ada@example.com']);
+    $target = User::factory()->create(['name' => 'Grace Hopper', 'email' => 'grace@example.com']);
+
+    actingAs($admin)
+        ->getJson('/api/users?search='.$target->id)
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $target->id)
+        ->assertJsonPath('meta.total', 1);
+});
+
+// Equality, not a LIKE: the engine drops the id column's LIKE once it decides
+// the term is a key. Searching "1" with ids running past 9 is what tells the
+// two apart - a wildcarded id would drag in 10 through 15 as well.
+it('matches an id exactly rather than as a fragment', function () {
+    // Digit-free throughout, or the name and email halves of the search would
+    // match "1" on their own and the assertion would prove nothing.
+    $admin = User::factory()->superAdmin()->create(['name' => 'Ada Lovelace', 'email' => 'ada@example.com']);
+
+    foreach (range(1, 14) as $index) {
+        User::factory()->create([
+            'name' => 'Member '.str_repeat('x', $index),
+            'email' => str_repeat('x', $index).'@example.com',
+        ]);
+    }
+
+    $rows = actingAs($admin)
+        ->getJson('/api/users?per_page=-1&search='.$admin->id)
+        ->assertOk()
+        ->json('data.*.id');
+
+    expect($rows)->toBe([$admin->id]);
+});
+
+// The id clause is a no-op for a term that is not a number: the engine only
+// treats it as a key when the whole term is digits, and `id LIKE '%ada%'`
+// matches nothing.
+it('leaves the id clause out of the way of a text search', function () {
+    $admin = User::factory()->superAdmin()->create(['name' => 'Ada Lovelace', 'email' => 'ada@example.com']);
+    User::factory()->count(5)->create();
+
+    actingAs($admin)
+        ->getJson('/api/users?per_page=-1&search=Lovelace')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $admin->id);
+});
+
+// The "All" page is built by hand from the result set, because Scout's
+// paginate() has nowhere to put a pre-counted total. An empty result would make
+// per_page 0 without the max() guard, which LengthAwarePaginator divides by.
+it('reports an honest page when a per_page of -1 matches nothing', function () {
+    $admin = superAdmin();
+    User::factory()->count(3)->create();
+
+    actingAs($admin)
+        ->getJson('/api/users?per_page=-1&search=nobody-by-that-name')
+        ->assertOk()
+        ->assertJsonCount(0, 'data')
+        ->assertJsonPath('meta.total', 0)
+        ->assertJsonPath('meta.per_page', 1)
+        ->assertJsonPath('meta.current_page', 1)
+        ->assertJsonPath('meta.last_page', 1);
+});
+
+it('reports the matched rows as the page size when per_page is -1', function () {
+    $admin = superAdmin();
+    User::factory()->count(4)->create();
+
+    actingAs($admin)
+        ->getJson('/api/users?per_page=-1')
+        ->assertOk()
+        ->assertJsonCount(5, 'data')
+        ->assertJsonPath('meta.total', 5)
+        ->assertJsonPath('meta.per_page', 5)
+        ->assertJsonPath('meta.current_page', 1)
+        ->assertJsonPath('meta.last_page', 1);
+});
+
 it('exposes the columns the admin table renders', function () {
     $admin = superAdmin();
 

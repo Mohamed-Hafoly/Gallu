@@ -331,7 +331,11 @@ it('rejects a sort column outside the whitelist', function () {
         ->assertStatus(422);
 });
 
-it('searches title, description, creator and document id', function () {
+// The description half of this search now goes through a FULLTEXT index, which
+// a RefreshDatabase transaction cannot see - InnoDB processes full-text updates
+// at commit time - so it lives in ImageFullTextSearchTest instead. What is left
+// here is the LIKE side.
+it('searches on the title and the creator', function () {
     ['team' => $team, 'admin' => $admin, 'document' => $document] = teamFixture();
 
     $photographer = User::factory()->create(['name' => 'Ansel Adams']);
@@ -339,26 +343,101 @@ it('searches title, description, creator and document id', function () {
 
     $byTitle = Image::factory()->for($admin)->for($document)
         ->create(['title' => 'Harbour at dawn', 'description' => null]);
-    $byDescription = Image::factory()->for($admin)->for($document)
-        ->create(['title' => 'Untitled', 'description' => 'Taken from the harbour wall']);
     $byCreator = Image::factory()->for($photographer)->for($document)
         ->create(['title' => 'Untitled', 'description' => null]);
 
-    $titleHits = actingAs($admin)->getJson('/api/images?search=Harbour')->assertOk()->json('data');
-    expect(collect($titleHits)->pluck('id'))
-        ->toContain($byTitle->id)
-        ->toContain($byDescription->id);
+    actingAs($admin)
+        ->getJson('/api/images?search=Harbour')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $byTitle->id);
 
     actingAs($admin)
         ->getJson('/api/images?search=Ansel')
         ->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.id', $byCreator->id);
+});
+
+// This listing used to match document_id exactly for an all-digit term. It no
+// longer does: Scout takes its searchable columns from the model, and can only
+// LIKE them - `document_id LIKE '%1%'` would match documents 1, 10, 11 and 21,
+// which is the broken filter the old code called out. Nothing is lost in the UI,
+// where the gallery is always pinned to one document by the document_id filter.
+it('does not match an image by document id', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+
+    // Digit-free throughout, or the title and creator clauses would match the
+    // term on their own and the assertion would prove nothing.
+    $admin->forceFill(['name' => 'Echo'])->save();
+
+    foreach (['Alpha', 'Bravo', 'Delta'] as $title) {
+        Image::factory()->for($admin)->for($document)->create([
+            'title' => $title,
+            'description' => null,
+        ]);
+    }
 
     actingAs($admin)
         ->getJson("/api/images?search={$document->id}")
         ->assertOk()
-        ->assertJsonCount(3, 'data');
+        ->assertJsonCount(0, 'data')
+        ->assertJsonPath('meta.total', 0);
+});
+
+// scout.soft_delete is on, so Scout owns the trashed state: search() seeds a
+// __soft_deleted = 0 where, the controller's withTrashed()/onlyTrashed() on the
+// *Scout* builder drop or flip it, and constrainForSoftDeletes() turns whichever
+// survives into the matching Eloquent constraint.
+//
+// The assertion below pins the config because the two halves only work
+// together. Turn it off and the seeded where disappears, leaving the builder
+// calls with nothing to act on; move the calls into query() and
+// constrainForSoftDeletes() - which runs *after* that callback - overrides them,
+// asking for deleted_at both null and not null so trashed=only returns nothing.
+// Either half alone is a silently empty bin.
+it('honours the trashed flag alongside a search', function () {
+    expect(config('scout.soft_delete'))->toBeTrue();
+
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+
+    $live = Image::factory()->for($admin)->for($document)->create(['title' => 'Findable live']);
+    $binned = Image::factory()->for($admin)->for($document)->create(['title' => 'Findable binned']);
+    $binned->delete();
+
+    $ids = fn (string $query) => actingAs($admin)
+        ->getJson('/api/images?search=Findable&'.$query)
+        ->assertOk()
+        ->json('data.*.id');
+
+    expect($ids(''))->toBe([$live->id]);
+    expect($ids('trashed=only'))->toBe([$binned->id]);
+    expect($ids('trashed=with'))->toEqualCanonicalizing([$binned->id, $live->id]);
+});
+
+// The engine appends an id tie-break of its own only when no column is declared
+// full-text - and `description` is - so this listing has no implicit one at all.
+// The existing tie-break test above does not search, so it exercises the
+// no-join path; this one covers the joined, searched query specifically.
+it('does not repeat an image across pages when the sort ties, while searching', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+
+    Image::factory()->count(4)->for($admin)->for($document)->create([
+        'title' => 'Findable',
+        // Tied to the second, which is what makes the tie-break load-bearing.
+        'created_at' => now(),
+    ]);
+
+    $ids = [];
+    foreach (range(1, 4) as $page) {
+        $ids = array_merge($ids, actingAs($admin)
+            ->getJson("/api/images?search=Findable&sort_by=created_at&per_page=1&page={$page}")
+            ->assertOk()
+            ->json('data.*.id'));
+    }
+
+    expect($ids)->toHaveCount(4);
+    expect(array_unique($ids))->toHaveCount(4);
 });
 
 // A search must never widen the team scope: the ORs are grouped for this.
@@ -374,6 +453,26 @@ it('does not let a search escape the team scope', function () {
         ->getJson('/api/images?search=Outsider')
         ->assertOk()
         ->assertJsonCount(0, 'data');
+});
+
+// As on documents: a blank term returns early from addTextSearchConstraints(),
+// so the unsearched listing reaches constrainForSoftDeletes() by its own route.
+it('honours the trashed flag without a search', function () {
+    ['admin' => $admin, 'document' => $document] = teamFixture();
+
+    $live = Image::factory()->for($admin)->for($document)->create();
+    $binned = Image::factory()->for($admin)->for($document)->create();
+    $binned->delete();
+
+    $ids = fn (string $query) => actingAs($admin)
+        ->getJson('/api/images?per_page=-1&'.$query)
+        ->assertOk()
+        ->json('data.*.id');
+
+    expect($ids(''))->toBe([$live->id]);
+    expect($ids('search='))->toBe([$live->id]);
+    expect($ids('trashed=only'))->toBe([$binned->id]);
+    expect($ids('trashed=with'))->toEqualCanonicalizing([$binned->id, $live->id]);
 });
 
 // ------------------------------------------------------------ restore

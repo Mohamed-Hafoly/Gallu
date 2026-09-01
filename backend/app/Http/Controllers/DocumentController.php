@@ -9,8 +9,11 @@ use App\Http\Resources\DocumentResource;
 use App\Models\Document;
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Gate;
 
 class DocumentController extends Controller
@@ -125,83 +128,91 @@ class DocumentController extends Controller
         $sortBy = $request->input('sort_by') ?: 'id';
         $direction = $request->input('sort_order') ?: 'asc';
 
-        $query = Document::query()
-            ->visibleTo($request->user())
+        // Which columns are searched is Document::toSearchableArray()'s to say,
+        // and the engine wraps them in one OR group. The creator and team names
+        // are inside that group through the joins Document::newScoutQuery()
+        // adds - deliberately not through search()'s callback, which appends at
+        // the top level where an OR would escape the visibleTo() below. Read the
+        // note on newScoutQuery() before moving either.
+        //
+        // An empty term is no search at all: the engine leaves the query alone
+        // when the term is blank, so this needs no conditional.
+        $builder = Document::search($search)
+            // The bin, on the Scout builder rather than inside query() below.
+            // That placement is the whole point of scout.soft_delete being on:
+            // search() seeds a __soft_deleted = 0 where, withTrashed() drops it
+            // and onlyTrashed() flips it to 1, and the engine turns whichever
+            // survives into the matching Eloquent constraint.
+            //
+            // It must not move into query(). constrainForSoftDeletes() runs
+            // *after* that callback, so an Eloquent-level onlyTrashed() there is
+            // silently overridden and the bin comes back empty.
+            //
             // Widens which rows survive the soft-delete scope, never which team
-            // they belong to - visibleTo() has already narrowed that, and this
-            // runs after it.
+            // they belong to - visibleTo() narrows that inside query(), and an
+            // AND either way.
             ->when($trashed === 'with', fn ($builder) => $builder->withTrashed())
             ->when($trashed === 'only', fn ($builder) => $builder->onlyTrashed())
-            // Grouped, so the ORs cannot escape the scope above and turn a
-            // search into a cross-team read.
+            // Everything that must AND with the search. The database engine
+            // applies this straight to the query, so these are real constraints
+            // rather than post-filters - and they land outside the search group,
+            // which is exactly where the team scope has to be.
+            ->query(fn (Builder $query) => $query
+                ->visibleTo($request->user())
+                // `team` is rendered by the admin table and `images_count` by
+                // both callers, so these are never conditional.
+                //
+                // withTrashed() on the team, so a trashed document still reports
+                // the team it belonged to rather than a bare "-". That is the
+                // whole explanation for why its restore button is off:
+                // DocumentResource passes the team's deleted_at through, and
+                // restore() refuses while it is set.
+                ->with(['user', 'team' => fn ($team) => $team->withTrashed()])
+                // Counted through withTrashed() on a trashed listing, for the
+                // reason in self::with(): the images went down with the document,
+                // so the default scope would report 0 for every row - and the
+                // count is one of the columns this listing can be sorted by.
+                ->withCount(['images' => fn ($images) => $images
+                    ->when($trashed !== null, fn ($query) => $query->withTrashed())])
+                // Only the gallery's card grid wants the cover thumbnails; the
+                // admin table shows a count and links to the document page, which
+                // fetches its own images. See IndexDocumentRequest for why this
+                // is a parameter.
+                ->when(
+                    $request->boolean('cover'),
+                    fn ($query) => $query->with(self::with($trashed !== null)),
+                ))
+            // `creator` and `team` are the API's names for values that live on
+            // other tables. Both sort on the *name* the cell shows rather than on
+            // the foreign key, which would order by insertion and read as broken.
             //
-            // Both relations are searched through orWhereHas, unlike the users
-            // listing, which needs a hand-built EXISTS: a document *has* a team
-            // relation, where a user's membership is only a role pivot row. The
-            // relation carries Team's soft-delete scope, so it is widened with
-            // withTrashed() - the same rule the team sort and the cell follow,
-            // and what lets a search for a deleted team's name still find the
-            // documents that went down with it.
-            ->when($search !== '', fn ($builder) => $builder->where(
-                fn ($grouped) => $grouped
-                    ->where('title', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('user', fn ($user) => $user->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('team', fn ($team) => $team->withTrashed()->where('name', 'like', "%{$search}%"))
-            ))
-
-            // `team` is rendered by the admin table and `images_count` by both
-            // callers, so these are never conditional.
+            // Correlated subselects rather than the joins newScoutQuery() adds,
+            // because a sort must work on an unsearched listing too - where there
+            // are no joins at all. Their own `users` and `teams` are why those
+            // joins are aliased.
             //
-            // withTrashed() on the team, so a trashed document still reports the
-            // team it belonged to rather than a bare "-". That is now the whole
-            // explanation for why its restore button is off: DocumentResource
-            // passes the team's deleted_at through, and restore() refuses while
-            // it is set. Unconditional rather than only on a trashed listing,
-            // because Team::booted() means a *live* document can no longer have
-            // a trashed team — so the two cases cannot disagree.
-            ->with(['user', 'team' => fn ($builder) => $builder->withTrashed()])
-            // Counted through withTrashed() on a trashed listing, for the reason
-            // in self::with(): the images went down with the document, so the
-            // default scope would report 0 for every row - and the count is one
-            // of the columns this listing can be sorted by.
-            ->withCount(['images' => fn ($builder) => $builder
-                ->when($trashed !== null, fn ($images) => $images->withTrashed())])
-            // Only the gallery's card grid wants the cover thumbnails; the admin
-            // table shows a count and links to the document page, which fetches
-            // its own images. See IndexDocumentRequest for why this is a
-            // parameter.
-            ->when(
-                $request->boolean('cover'),
-                fn ($builder) => $builder->with(self::with($trashed !== null)),
-            );
-
-        // `creator` and `team` are the API's names for values that live on
-        // other tables. Both sort on the *name* the cell shows rather than on
-        // the foreign key, which would order by insertion and read as broken.
-        //
-        // Correlated subselects rather than joins, so the sort cannot duplicate
-        // rows when a document has several images - the same technique
-        // ImageController::index and User::scopeWithTeamAssignment() use.
-        //
-        // withTrashed() on the team subselect, so it agrees with the cell: the
-        // eager load above is widened the same way, and a trashed document
-        // sorts under the team name it displays rather than under null.
-        // documents.team_id is nullable, so nulls remain possible either way —
-        // both databases sort them first ascending.
-        $query->orderBy(match ($sortBy) {
-            self::CREATOR_SORT => User::select('name')->whereColumn('users.id', 'documents.user_id'),
-            self::TEAM_SORT => Team::withTrashed()->select('name')->whereColumn('teams.id', 'documents.team_id'),
-            default => $sortBy,
-        }, $direction);
-
-        // A stable tie-break, and not optional once the listing is paged: none
-        // of the sortable columns is unique — documents seeded in one batch
-        // share created_at to the second — and LIMIT/OFFSET over a non-unique
-        // key lets the database order ties differently per page, so page 2 can
-        // repeat a row from page 1 or skip one. ImageController::index carries
-        // the same line, for the same reason.
-        $query->orderBy('id');
+            // withTrashed() on the team subselect, so it agrees with the cell:
+            // the eager load above is widened the same way, and a trashed
+            // document sorts under the team name it displays rather than under
+            // null. documents.team_id is nullable, so nulls remain possible
+            // either way - both databases sort them first ascending.
+            ->orderBy(match ($sortBy) {
+                self::CREATOR_SORT => User::select('name')->whereColumn('users.id', 'documents.user_id'),
+                self::TEAM_SORT => Team::withTrashed()->select('name')->whereColumn('teams.id', 'documents.team_id'),
+                default => $sortBy,
+            }, $direction)
+            // A stable tie-break, and load-bearing here in a way it is not on the
+            // users listing: none of the sortable columns is unique - documents
+            // seeded in one batch share created_at to the second - and
+            // LIMIT/OFFSET over a non-unique key lets the database order ties
+            // differently per page, so page 2 can repeat a row from page 1 or
+            // skip one.
+            //
+            // Scout's engine appends an id tie-break of its own only when no
+            // column is declared full-text, and `description` is - so on this
+            // model there is no implicit one at all. Qualified, because `id` is
+            // ambiguous once newScoutQuery() has joined.
+            ->orderBy('documents.id');
 
         // Absent means *everything*, as in ImageController::index and unlike
         // IndexUserRequest's caller: this endpoint's second caller is the
@@ -209,20 +220,25 @@ class DocumentController extends Controller
         // cannot reach here - `not_in:0` makes it a 422, so integer() only
         // returns 0 for a missing param.
         $perPage = $request->integer('per_page');
-        $total = null;
 
         if ($perPage === self::ALL_PER_PAGE || $perPage === 0) {
-            // Not simply paginate(-1): a negative limit is dropped by the query
-            // builder while the offset is still emitted, and `OFFSET` without
-            // `LIMIT` is a syntax error in both SQLite and MySQL. Counting once
-            // and paginating by that keeps a single page and an honest
-            // meta.per_page - the total is handed back so paginate() does not
-            // run the same count a second time.
-            $total = $query->toBase()->getCountForPagination();
-            $perPage = max($total, 1);
+            // Scout's paginate() takes no pre-counted total to hand back, so the
+            // single page is built from the result set rather than counted and
+            // then fetched again. get() applies no limit, so it is both the page
+            // and the count; max() keeps per_page positive when a search matches
+            // nothing.
+            $results = $builder->get();
+
+            return DocumentResource::collection(new LengthAwarePaginator(
+                $results,
+                $results->count(),
+                max($results->count(), 1),
+                1,
+                ['path' => Paginator::resolveCurrentPath(), 'query' => $request->query()],
+            ));
         }
 
-        return DocumentResource::collection($query->paginate($perPage, total: $total));
+        return DocumentResource::collection($builder->paginate($perPage));
     }
 
     public function show(Document $document): DocumentResource

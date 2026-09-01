@@ -84,6 +84,6 @@ return [
     |
     */
 
-    'soft_delete' => false,
+    'soft_delete' => true,
 
 ];
