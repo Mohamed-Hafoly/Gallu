@@ -23,28 +23,24 @@ class DocumentValidationRules
      * withoutTrashed() belongs here, unlike on teams and categories, whose
      * requests document the opposite trade-off.
      *
-     * @param  int|null  $teamId  The destination team; null falls back to per-owner.
+     * Not nullable, and neither are the callers' arguments. rules() is built
+     * before validation runs, so a request that omits team_id still reaches
+     * here - but it arrives as 0, which Request::integer() returns for an
+     * absent key. No team has id 0 (auto-increment starts at 1), so the scope
+     * below matches nothing and cannot report a false duplicate, and the
+     * sibling `required` rule is what answers with a 422. A null would only be
+     * a second way of spelling the same thing, and would need a branch to
+     * unpick.
+     *
+     * @param  int  $teamId  The destination team; 0 for a request that named none.
      * @param  Document|null  $ignore  The document being updated, excluded from its own check.
      * @return list<mixed>
      */
-    public static function title(?int $teamId, int $userId, ?Document $ignore = null): array
+    public static function title(int $teamId, ?Document $ignore = null): array
     {
-        $unique = Rule::unique('documents', 'title')->withoutTrashed();
-
-        if ($teamId === null) {
-            // Not reachable over HTTP: team_id is required on both requests and
-            // must name a live team, so a document created or edited through
-            // the API always has one. Written anyway so the rule is correct on
-            // its own terms rather than leaning on a sibling rule to hold, and
-            // because documents.team_id is nullable - nullOnDelete() empties it
-            // when a team is force-deleted, and factories may leave it unset.
-            //
-            // whereNull(), not where('team_id', null): the presence verifier
-            // emits `team_id = ?` for a null value, which matches nothing.
-            $unique->whereNull('team_id')->where('user_id', $userId);
-        } else {
-            $unique->where('team_id', $teamId);
-        }
+        $unique = Rule::unique('documents', 'title')
+            ->withoutTrashed()
+            ->where('team_id', $teamId);
 
         if ($ignore !== null) {
             $unique->ignore($ignore);

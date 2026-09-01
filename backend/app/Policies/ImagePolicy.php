@@ -26,7 +26,7 @@ class ImagePolicy
     public function view(User $user, Image $image): bool
     {
         return $this->teamOf($user) !== null
-            && $image->document->team_id === $this->teamOf($user);
+            && $this->teamOfImage($image) === $this->teamOf($user);
     }
 
     /**
@@ -50,7 +50,7 @@ class ImagePolicy
         // Not the owner, so this is only allowed as the team's admin.
         return $user->role() === RoleName::Admin
             && $this->teamOf($user) !== null
-            && $image->document->team_id === $this->teamOf($user);
+            && $this->teamOfImage($image) === $this->teamOf($user);
     }
 
     public function delete(User $user, Image $image): bool
@@ -97,8 +97,38 @@ class ImagePolicy
         return $this->update($user, $image);
     }
 
+    /**
+     * Null for a super-admin or an unassigned member, which is why every caller
+     * above guards on it: documents.team_id is NOT NULL, so a bare comparison
+     * could only pair off two nulls from *this* side.
+     */
     private function teamOf(User $user): ?int
     {
         return $user->teamAssignment()['team_id'] ?? null;
+    }
+
+    /**
+     * The team the image sits in, through its document.
+     *
+     * withTrashed(), and not `$image->document->team_id`: document() carries
+     * Document's soft-delete scope, so it resolves to null for a trashed
+     * document and that read is a fatal on a null. It is reachable — the
+     * restore route is bound withTrashed() (routes/api.php), and
+     * ImageController::restore() authorizes *before* its documentIsTrashed()
+     * 409, so a team admin restoring a teammate's image under a binned document
+     * came through here with a trashed document in hand and got a 500 where the
+     * 409 was meant to answer. The owner branch in update() returns before this
+     * is reached, which is why it stayed hidden.
+     *
+     * Answering from the trashed document is also the *correct* answer, not
+     * merely a safe one: the admin genuinely may act on that image, and it is
+     * the controller's job — not this policy's — to say "not yet".
+     *
+     * value() rather than loading the model: one column is all this needs, and
+     * it cannot be tripped by Model::preventsLazyLoading.
+     */
+    private function teamOfImage(Image $image): ?int
+    {
+        return $image->document()->withTrashed()->value('team_id');
     }
 }

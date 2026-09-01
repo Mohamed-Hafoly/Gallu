@@ -20,13 +20,19 @@ return new class extends Migration
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             // Stamped at creation rather than derived from the creator's current
             // team, so an entry stays with the team it was made for after its
-            // author moves or leaves. Nullable because super-admins belong to no
-            // team and DatabaseSeeder seeds none at all.
+            // author moves or leaves. NOT NULL: req.txt makes the team the unit
+            // of visibility, and Document::scopeVisibleTo(), DocumentPolicy and
+            // ImagePolicy all read it, so a team-less document would be a row
+            // visible to nobody but a super-admin.
             //
-            // Nothing reads this yet: req.txt's "admin sees only his own team's
-            // entries" rule is unbuilt for images too, and belongs in one pass
-            // over both models. The column is here so that pass needs no backfill.
-            $table->foreignId('team_id')->nullable()->constrained()->nullOnDelete();
+            // cascadeOnDelete, unlike user_id above, and that contrast is the
+            // whole design: the team is the container, the author is not.
+            // Destroying a team destroys its documents and - through
+            // images.document_id, also a cascade - their images. Because that
+            // happens in SQL and fires no model events, the force-delete hooks
+            // in Team::booted() and Document::booted() walk the children through
+            // the models first so their media files are not orphaned on disk.
+            $table->foreignId('team_id')->constrained()->cascadeOnDelete();
             $table->string('title', 140);
             $table->string('description', 400)->nullable();
             $table->timestamps();

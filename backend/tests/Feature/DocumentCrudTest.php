@@ -831,17 +831,6 @@ it('refuses a super admin the same restore', function () {
         ->assertStatus(409);
 });
 
-// documents.team_id is nullable, and a document with no team has no team to
-// wait for.
-it('still restores a team less document', function () {
-    $document = Document::factory()->for(User::factory())->create(['team_id' => null]);
-    $document->delete();
-
-    actingAs(superAdmin())
-        ->postJson("/api/documents/{$document->id}/restore")
-        ->assertOk();
-});
-
 // The two paths must not double up: once the team has put its documents back,
 // the individual restore has nothing left to do and says so.
 it('reports a document already restored with its team as not trashed', function () {
@@ -867,6 +856,30 @@ it('reports the trashed teams name and deleted_at on the trashed listing', funct
         ->assertOk()
         ->json('data.0');
 
+    expect($row['team']['name'])->toBe($team->name);
+    expect($row['team']['deleted_at'])->not->toBeNull();
+});
+
+// The same thing on the gallery's path, which the test above cannot reach.
+//
+// cover=1 merges a second eager-load set, and Builder::with() merges by
+// relation name - so a plain `team` constraint in that set silently replaced
+// index()'s widened one and served `team: null` for every trashed team. The SPA
+// reads deleted_at to decide whether the row may be restored, so a null team
+// left the gallery's restore button enabled on a document that answers 409.
+//
+// Both paths asserted rather than one, because the bug was precisely that they
+// disagreed.
+it('reports the trashed teams name on the gallerys cover listing too', function () {
+    ['team' => $team] = teamFixture();
+    $team->delete();
+
+    $row = actingAs(superAdmin())
+        ->getJson('/api/documents?trashed=only&cover=1')
+        ->assertOk()
+        ->json('data.0');
+
+    expect($row['team'])->not->toBeNull();
     expect($row['team']['name'])->toBe($team->name);
     expect($row['team']['deleted_at'])->not->toBeNull();
 });
@@ -966,33 +979,32 @@ it('names the team in the duplicate title message', function () {
 });
 
 /**
- * The team-less branch has no route that can reach it - team_id is required on
- * both requests and must name a live team - so it is exercised through the rule
- * itself rather than an HTTP call that would only pretend to cover it.
+ * documents.team_id is NOT NULL, so the null branch of the title rule can never
+ * describe a stored row. It is still reachable as a *call*: both requests build
+ * their rules eagerly, so a request that omits team_id still reaches the title
+ * rule before validation has run - as 0, which Request::integer() returns for
+ * an absent key.
+ *
+ * What the rule must do with it is nothing at all: no team has id 0, so the
+ * scope matches no rows and cannot invent a duplicate, leaving the sibling
+ * `required` rule to answer. Get this wrong in the other direction - scope to
+ * every row, or reintroduce a null the signature cannot take - and a missing
+ * team_id turns into a spurious title error or a 500.
  */
-it('falls back to a per-owner scope when a document has no team', function () {
+it('scopes the title rule to nothing when no team is given', function () {
     $owner = User::factory()->create();
-    Document::factory()->for($owner)->create(['title' => 'Orphan', 'team_id' => null]);
+    Document::factory()->for($owner)->create(['title' => 'Orphan']);
 
-    $rules = ['title' => DocumentValidationRules::title(null, $owner->id)];
-
-    expect(validator(['title' => 'Orphan'], $rules)->fails())->toBeTrue();
-    expect(validator(['title' => 'Different'], $rules)->fails())->toBeFalse();
-
-    // Another owner's team-less document is not the same row, so it does not
-    // collide - which is what "falls back to per-owner" has to mean.
-    $rules = ['title' => DocumentValidationRules::title(null, User::factory()->create()->id)];
+    $rules = ['title' => DocumentValidationRules::title(0)];
 
     expect(validator(['title' => 'Orphan'], $rules)->fails())->toBeFalse();
 });
 
-// A team-less document must not block the title inside a team either: the two
-// scopes are separate pools, not one with a hole in it.
-it('does not let a team less document block a title inside a team', function () {
-    ['admin' => $admin, 'team' => $team] = teamFixture();
-    Document::factory()->for($admin)->create(['title' => 'Orphan', 'team_id' => null]);
+it('answers a document posted without a team with a 422 rather than a 500', function () {
+    ['admin' => $admin] = teamFixture();
 
     actingAs($admin)
-        ->postJson('/api/documents', ['title' => 'Orphan', 'team_id' => $team->id])
-        ->assertCreated();
+        ->postJson('/api/documents', ['title' => 'Untitled'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('team_id');
 });

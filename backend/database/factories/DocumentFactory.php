@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Document;
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -20,9 +21,11 @@ class DocumentFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            // Left null by default: team stamping is the controller's job and
-            // most tests are about ownership, not teams.
-            'team_id' => null,
+            // documents.team_id is NOT NULL, so the factory makes a team rather
+            // than leaving the column unset - the same reason ImageFactory makes
+            // a document. Tests about teams pass an explicit id and never reach
+            // this; tests about ownership get a throwaway team they can ignore.
+            'team_id' => Team::factory(),
             'title' => fake()->words(3, true),
             'description' => fake()->optional()->sentence(),
         ];

@@ -31,8 +31,11 @@ class DocumentResource extends JsonResource
             // The real total, which the truncated relation above cannot give —
             // and the only image information the admin listing carries.
             'images_count' => $this->whenCounted('images'),
-            // Nullable the way UserResource's team is: a document created by a
-            // super-admin before team_id was required belongs to no team.
+            // Still nullable, though documents.team_id is NOT NULL: team() is
+            // a belongsTo onto a soft-deleting model, so it resolves to null for
+            // a *trashed* team wherever the relation was loaded without
+            // withTrashed() - self::with() does exactly that, which is the path
+            // show/store/update take. Null here means trashed, never absent.
             'team' => $this->whenLoaded('team', fn () => $this->team === null ? null : [
                 'id' => $this->team->id,
                 'name' => $this->team->name,
@@ -47,11 +50,6 @@ class DocumentResource extends JsonResource
                 // what the endpoint actually enforces.
                 'deleted_at' => $this->team->deleted_at,
             ]),
-            // Unconditional for the same reason as ImageResource's: documents.user_id
-            // is NOT NULL and cascades on delete, so a document without a creator
-            // cannot exist. whenLoaded() would hide a forgotten eager load by
-            // silently dropping the key; read directly and it throws under
-            // Model::shouldBeStrict instead.
             // Null once the author is binned: belongsTo(User) carries User's
             // soft-delete scope, so this reads null for a deleted author while
             // they are still recoverable, and again permanently if the row is

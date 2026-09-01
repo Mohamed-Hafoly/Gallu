@@ -3,12 +3,15 @@
 namespace App\Models;
 
 use Database\Factories\TeamFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Prunable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Support\Config;
 
 /**
@@ -18,7 +21,12 @@ use Spatie\Permission\Support\Config;
 class Team extends Model
 {
     /** @use HasFactory<TeamFactory> */
-    use HasFactory, SoftDeletes;
+    use HasFactory, Prunable, SoftDeletes;
+
+    /**
+     * How long a binned team is kept before it is destroyed for good.
+     */
+    public const RETENTION_DAYS = 30;
 
     /**
      * The attributes that are mass assignable.
@@ -48,11 +56,46 @@ class Team extends Model
      */
     protected static function booted(): void
     {
+        // The force-delete half, and both parts of it exist because the
+        // database gets this wrong in opposite directions.
+        //
+        // The documents *would* be cascaded by documents.team_id, and that is
+        // the problem: a SQL cascade fires no model events, so it runs straight
+        // on through images.document_id and orphans every image file and
+        // `media` row on disk. Going through the model instead runs Document's
+        // own force-delete hook, which is where that is handled.
+        //
+        // The membership rows would not be cascaded at all. model_has_roles
+        // carries a foreign key on role_id only — team_id and model_id are
+        // plain indexed columns — so the rows naming this team would simply
+        // outlive it, and User::teamAssignment() reads that table directly.
+        // Deleted here rather than through members(), which is a morphedByMany
+        // and hands back users rather than the pivot rows this has to remove.
+        //
+        // On `deleting` rather than Prunable's pruning() so it holds for a
+        // force delete from anywhere — the prune, a test, tinker — and not only
+        // when model:prune happens to be the caller.
+        static::deleting(function (Team $team): void {
+            if (! $team->isForceDeleting()) {
+                return;
+            }
+
+            $team->documents()->withTrashed()->get()
+                ->each(fn (Document $document) => $document->forceDelete());
+
+            DB::table(Config::modelHasRolesTable())
+                ->where(Config::teamForeignKey(), $team->getKey())
+                ->delete();
+        });
+
         // `deleted`, not `deleting`: deleted_at is not stamped until after the
         // save, and the cascade is only meaningful once it is.
         static::deleted(function (Team $team): void {
-            // documents.team_id is nullOnDelete, so a hard delete simply
-            // detaches them — there is nothing here to repeat.
+            // documents.team_id is cascadeOnDelete, so a hard delete takes
+            // them with it in SQL — there is nothing here to repeat. Note the
+            // cascade is the database's, not this one's, and so fires no model
+            // events: that is why the force-delete hook below cannot lean on
+            // it either.
             if ($team->isForceDeleting()) {
                 return;
             }
@@ -86,6 +129,19 @@ class Team extends Model
                 ->onlyTrashed()
                 ->each(fn (Document $document) => $document->restore());
         });
+    }
+
+    /**
+     * The rows `model:prune` may destroy on this run.
+     *
+     * Unconditional, unlike Document and Image: a team is the top of the
+     * hierarchy, so there is no parent bin it could be waiting inside.
+     *
+     * @return Builder<static>
+     */
+    public function prunable(): Builder
+    {
+        return static::where('deleted_at', '<=', now()->subDays(self::RETENTION_DAYS));
     }
 
     /**

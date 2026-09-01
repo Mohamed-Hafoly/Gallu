@@ -512,6 +512,30 @@ it('refuses the images own uploader the same restore', function () {
         ->assertStatus(409);
 });
 
+// The third caller, and the one the two above cannot stand in for: an admin
+// restoring a *teammate's* image. A super-admin never reaches ImagePolicy at all
+// (Gate::before), and the owner returns from ImagePolicy::update()'s first
+// branch - so only this path asks the policy which team the image is in.
+//
+// It used to answer with `$image->document->team_id`, and document() carries
+// Document's soft-delete scope: with the document binned that read is a fatal on
+// null, so the 409 below arrived as a 500. ImagePolicy::teamOfImage() reads the
+// column withTrashed() instead, which both authorises the admin - they may act
+// on this image - and lets the controller's guard say "not yet".
+it('answers an admin restoring a teammates image under a trashed document with a 409', function () {
+    ['admin' => $admin, 'member' => $member, 'document' => $document] = teamFixture();
+
+    $image = Image::factory()->for($member)->for($document)->create();
+    $document->delete();
+
+    actingAs($admin)
+        ->postJson("/api/images/{$image->id}/restore")
+        ->assertStatus(409)
+        ->assertJsonPath('message', __('image.documentTrashed'));
+
+    expect($image->fresh()->trashed())->toBeTrue();
+});
+
 // The way out the message points at - and the two paths must not double up.
 it('brings the image back with the document instead', function () {
     ['admin' => $admin, 'document' => $document] = teamFixture();

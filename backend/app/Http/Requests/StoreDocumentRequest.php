@@ -23,12 +23,9 @@ class StoreDocumentRequest extends FormRequest
     {
         return [
             // Scoped to the destination team, which the sibling rule below
-            // validates. A forged or missing id reaches this as null and takes
-            // the per-owner fallback - the request still fails on team_id.
-            'title' => DocumentValidationRules::title(
-                $this->integer('team_id') ?: null,
-                $this->user()->id,
-            ),
+            // validates. A forged or missing id reaches this as 0, which scopes
+            // the check to nothing - the request still fails on team_id.
+            'title' => DocumentValidationRules::title($this->integer('team_id')),
             'description' => ['nullable', 'string', 'max:400'],
             // Chosen in the create dialog rather than derived from the session,
             // so a super-admin - who belongs to no team - can still file a

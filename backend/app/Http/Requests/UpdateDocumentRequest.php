@@ -26,8 +26,7 @@ class UpdateDocumentRequest extends FormRequest
             // editable here, so scoping to where the document currently sits
             // would let it be moved into a team that already holds that title.
             'title' => DocumentValidationRules::title(
-                $this->integer('team_id') ?: null,
-                $this->route('document')->user_id,
+                $this->integer('team_id'),
                 $this->route('document'),
             ),
             'description' => ['nullable', 'string', 'max:400'],

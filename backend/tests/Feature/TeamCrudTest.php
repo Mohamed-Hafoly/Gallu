@@ -309,15 +309,23 @@ it('revives an image binned on its own before its document went', function () {
     expect($image->fresh()->trashed())->toBeFalse();
 });
 
-// documents.team_id is nullOnDelete, so a hard delete simply detaches them and
-// the cascade must stay out of the way.
-it('leaves documents alone when a team is force deleted', function () {
-    ['team' => $team, 'document' => $document] = teamWithContents();
+// documents.team_id is cascadeOnDelete, so a hard delete takes them with it in
+// SQL, and images.document_id carries that on down. Team::booted()'s
+// isForceDeleting() early return is what keeps the soft-delete cascade out of
+// the way of it.
+//
+// This is a raw forceDelete(), so no pruning() hook runs: what it pins is the
+// database's own behaviour, which is exactly why Team::pruning() exists to go
+// through the models instead — a cascade this deep fires no model events, so
+// the images' media files would be orphaned on disk. PruneTrashedTest covers
+// that half.
+it('destroys a teams documents and their images on a force delete', function () {
+    ['team' => $team, 'document' => $document, 'image' => $image] = teamWithContents();
 
     $team->forceDelete();
 
-    expect($document->fresh()->trashed())->toBeFalse();
-    expect($document->fresh()->team_id)->toBeNull();
+    expect(Document::withTrashed()->whereKey($document->id)->exists())->toBeFalse();
+    expect(Image::withTrashed()->whereKey($image->id)->exists())->toBeFalse();
 });
 
 // What the delete confirmation counts. Live rows only, which is exactly the set

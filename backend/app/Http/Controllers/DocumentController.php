@@ -90,7 +90,18 @@ class DocumentController extends Controller
             // So show(), store() and update() report `team` too. Without it the
             // resource's whenLoaded() drops the key, and a created document
             // would come back describing every field except the one just picked.
-            'team' => fn ($query) => $query,
+            //
+            // withTrashed(), and this is the *only* definition of the team eager
+            // load - index() must not add a second one. Builder::with() merges
+            // by relation name (array_merge, string keys), so whichever call
+            // comes last silently replaces the other's constraint: a plain
+            // closure here used to overwrite index()'s widened one on the
+            // cover=1 path, serving `team: null` for every trashed team and
+            // leaving the gallery's restore button enabled on a row that 409s.
+            //
+            // Free everywhere else: a live document cannot have a trashed team,
+            // since binning a team bins its documents.
+            'team' => fn ($query) => $query->withTrashed(),
         ];
     }
 
@@ -162,11 +173,12 @@ class DocumentController extends Controller
                 // `team` is rendered by the admin table and `images_count` by
                 // both callers, so these are never conditional.
                 //
-                // withTrashed() on the team, so a trashed document still reports
-                // the team it belonged to rather than a bare "-". That is the
-                // whole explanation for why its restore button is off:
-                // DocumentResource passes the team's deleted_at through, and
-                // restore() refuses while it is set.
+                // The team is widened in self::with() rather than here, so the
+                // two cannot disagree - see the note there. A trashed document
+                // still reports the team it belonged to rather than a bare "-",
+                // which is the whole explanation for why its restore button is
+                // off: DocumentResource passes the team's deleted_at through,
+                // and restore() refuses while it is set.
                 ->with(['user', 'team' => fn ($team) => $team->withTrashed()])
                 // Counted through withTrashed() on a trashed listing, for the
                 // reason in self::with(): the images went down with the document,
@@ -194,8 +206,8 @@ class DocumentController extends Controller
             // withTrashed() on the team subselect, so it agrees with the cell:
             // the eager load above is widened the same way, and a trashed
             // document sorts under the team name it displays rather than under
-            // null. documents.team_id is nullable, so nulls remain possible
-            // either way - both databases sort them first ascending.
+            // null. Without it a trashed team's documents would all collapse to
+            // null and sort together, which is not what the cell shows.
             ->orderBy(match ($sortBy) {
                 self::CREATOR_SORT => User::select('name')->whereColumn('users.id', 'documents.user_id'),
                 self::TEAM_SORT => Team::withTrashed()->select('name')->whereColumn('teams.id', 'documents.team_id'),

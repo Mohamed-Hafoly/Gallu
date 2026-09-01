@@ -63,8 +63,10 @@ class DocumentPolicy
     }
 
     /**
-     * A team-less user shares a team with nobody: `null === null` would
-     * otherwise make every team-less user a peer of every team-less document.
+     * A team-less user shares a team with nobody. The null guard is about the
+     * *user*, not the document - documents.team_id is NOT NULL, so the only way
+     * `null === null` could pair them off is from this side, where a super-admin
+     * or an unassigned member genuinely has no team.
      */
     private function sharesTeamWith(User $user, Document $document): bool
     {

@@ -6,6 +6,7 @@ use Database\Factories\DocumentFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Prunable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -25,7 +26,7 @@ use Laravel\Scout\Searchable;
 class Document extends Model
 {
     /** @use HasFactory<DocumentFactory> */
-    use HasFactory, Searchable, SoftDeletes;
+    use HasFactory, Prunable, Searchable, SoftDeletes;
 
     /**
      * Alias for the join onto `users` that puts the creator's name inside
@@ -38,6 +39,11 @@ class Document extends Model
      * Alias for the join onto `teams`, as above.
      */
     public const SEARCH_TEAM = 'search_team';
+
+    /**
+     * How long a binned document is kept before it is destroyed for good.
+     */
+    public const RETENTION_DAYS = 7;
 
     /**
      * The attributes that are mass assignable.
@@ -63,6 +69,34 @@ class Document extends Model
      */
     protected static function booted(): void
     {
+        // A force delete is the one case the database gets wrong, and it gets
+        // it wrong quietly. images.document_id is ON DELETE CASCADE, so the
+        // rows do go — but in SQL, firing no model events, so spatie's deleting
+        // hook never runs and every file, thumb conversion and `media` row is
+        // orphaned on disk with nothing left that could ever collect it: the
+        // media table carries no foreign key of its own.
+        //
+        // On `deleting` rather than in Prunable's pruning(), which only fires
+        // when model:prune reaches *this* model. Team's own force-delete hook
+        // deletes its documents directly, and so slipped straight past it —
+        // measured, not guessed, by PruneTrashedTest's "removes the files of a
+        // teams images when it prunes". Here it holds for the prune, for the
+        // team's cascade, and for tinker alike.
+        //
+        // withTrashed() and no window of its own: an image inside a document
+        // being destroyed dies with it whatever its own deleted_at says.
+        //
+        // get() first rather than Builder::each(), which chunks by offset — and
+        // every delete shifts the rows still to come out from under it.
+        static::deleting(function (Document $document): void {
+            if (! $document->isForceDeleting()) {
+                return;
+            }
+
+            $document->images()->withTrashed()->get()
+                ->each(fn (Image $image) => $image->forceDelete());
+        });
+
         // `deleted`, not `deleting`: deleted_at is not stamped until after the
         // save, and the cascade copies it so the two agree.
         static::deleted(function (Document $document): void {
@@ -155,8 +189,10 @@ class Document extends Model
      *
      * Both joins are many-to-one, so neither can duplicate a row - which is why
      * a join is safe here even though the *sorts* in DocumentController::index()
-     * must stay correlated subselects. Both are LEFT joins: team_id is
-     * nullable, and user_id became nullable when users turned soft-deletable.
+     * must stay correlated subselects. The users join is a LEFT join because
+     * user_id became nullable when users turned soft-deletable; the teams join
+     * is an inner join, since documents.team_id is NOT NULL and the join below
+     * carries no deleted_at filter, so every document has a row to match.
      *
      * They differ on deleted_at, deliberately, because each matches what the
      * row actually displays. A trashed *team* still shows its name in the team
@@ -197,10 +233,38 @@ class Document extends Model
                     ->on(self::SEARCH_CREATOR.'.id', '=', 'documents.user_id')
                     ->whereNull(self::SEARCH_CREATOR.'.deleted_at'),
             )
-            ->leftJoin(
+            ->join(
                 'teams as '.self::SEARCH_TEAM,
                 self::SEARCH_TEAM.'.id', '=', 'documents.team_id',
             );
+    }
+
+    /**
+     * The rows `model:prune` may destroy on this run.
+     *
+     * Conditional on the team for the same reason Image::prunable() is
+     * conditional on the document, one level up: Team::booted() bins a team's
+     * documents when the team goes, and a team outlives its documents by
+     * twenty-three days. Pruning on the timestamp alone would empty a team's
+     * bin in week one and restore it hollow in week four, against the
+     * restore-whole promise Team::restoring() makes.
+     *
+     * So a document is only prunable on its own clock while its team is live.
+     * One trashed under its team waits, and is destroyed by the team's own
+     * force-delete hook when the team's window runs out.
+     *
+     * whereHas('team') is the whole test, and means a *live* team: team() is a
+     * belongsTo onto a soft-deleting model, so it carries Team's scope.
+     * documents.team_id is NOT NULL, so there is no team-less case to allow
+     * for - which makes this exactly the shape of Image::prunable() one rung
+     * down, no nested group needed.
+     *
+     * @return Builder<static>
+     */
+    public function prunable(): Builder
+    {
+        return static::where('deleted_at', '<=', now()->subDays(self::RETENTION_DAYS))
+            ->whereHas('team');
     }
 
     public function user(): BelongsTo
@@ -222,10 +286,10 @@ class Document extends Model
      * Whether the owning team is itself in the bin.
      *
      * team() cannot answer this: it carries Team's soft-delete scope, so it
-     * resolves to null for a trashed team exactly as it does for a null
-     * team_id — and those two must never be confused here. A document with no
-     * team may be restored; one whose team is trashed may not, because a live
-     * document always has a live team.
+     * resolves to null for a trashed team — indistinguishable from "no team" if
+     * that were still possible. It is not, since documents.team_id is NOT NULL,
+     * but the relation still reads null and so still cannot be the test. Hence
+     * withTrashed() against the key directly.
      *
      * The document's own trashed state cannot answer it either: how a document
      * came to be in the bin makes no difference here. One binned on its own,
@@ -234,20 +298,21 @@ class Document extends Model
      */
     public function teamIsTrashed(): bool
     {
-        return $this->team_id !== null
-            && Team::withTrashed()
-                ->whereKey($this->team_id)
-                ->whereNotNull('deleted_at')
-                ->exists();
+        return Team::withTrashed()
+            ->whereKey($this->team_id)
+            ->whereNotNull('deleted_at')
+            ->exists();
     }
 
     /**
      * Restrict a listing to what this user is allowed to see: everything for a
      * super-admin, otherwise only their own team's documents.
      *
-     * A team-less non-super-admin matches nothing. Note DatabaseSeeder seeds no
-     * teams, so on a fresh install every non-super-admin sees an empty list —
-     * that is the rule working, not a bug.
+     * A team-less non-super-admin matches nothing: they have no team whose
+     * entries they could be entitled to. Said outright rather than left to
+     * `where('team_id', null)`, which Builder rewrites to `IS NULL` and so
+     * happens to return the same empty set — but only because the column is NOT
+     * NULL, and it reads like an oversight rather than the rule.
      */
     public function scopeVisibleTo(Builder $query, User $user): void
     {
@@ -255,6 +320,14 @@ class Document extends Model
             return;
         }
 
-        $query->where('team_id', $user->teamAssignment()['team_id'] ?? null);
+        $teamId = $user->teamAssignment()['team_id'] ?? null;
+
+        if ($teamId === null) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->where('team_id', $teamId);
     }
 }

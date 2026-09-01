@@ -7,6 +7,7 @@ use App\Enums\RoleName;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Prunable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -27,7 +28,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements HasMedia
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasRoles, InteractsWithMedia, Notifiable, Searchable, SoftDeletes;
+    use HasFactory, HasRoles, InteractsWithMedia, Notifiable, Prunable, Searchable, SoftDeletes;
 
     /**
      * There is deliberately no booted() cascade here, unlike Team and Document.
@@ -67,6 +68,11 @@ class User extends Authenticatable implements HasMedia
      * fallback rather than an upload — see registerMediaCollections().
      */
     public const DEFAULT_AVATAR_PATH = 'images/default-avatar.jpg';
+
+    /**
+     * How long a binned user is kept before they are destroyed for good.
+     */
+    public const RETENTION_DAYS = 30;
 
     /**
      * Memo for teamAssignment(), which UserResource hits for every listed row.
@@ -196,6 +202,50 @@ class User extends Authenticatable implements HasMedia
                 self::SEARCH_TEAM,
                 self::SEARCH_TEAM.'.model_id', '=', $this->getTable().'.'.$this->getKeyName(),
             );
+    }
+
+    /**
+     * Drop the membership row on a force delete, and nothing else.
+     *
+     * Deliberately all this does. The docblock at the top of this class spells
+     * out why a soft delete does not cascade, and the same holds one step
+     * further on: documents.user_id and images.user_id are nullOnDelete, so
+     * destroying the row costs the team its *authorship* and nothing more. The
+     * gallery must not empty because a member left, which is exactly what
+     * documents.team_id being a cascade and user_id not being one says. The
+     * avatar goes on its own — forceDelete() on a HasMedia model takes the
+     * file, its conversions and the media row with it.
+     *
+     * The role row would otherwise outlive them: model_has_roles carries a
+     * foreign key on role_id only, so nothing at the database level removes a
+     * row keyed by model_id. assignToTeam(null) is the only writer of
+     * membership in this app, so it clears it here too rather than a second
+     * delete written out by hand — and it must not run on a *soft* delete,
+     * where that surviving row is what lets a restore return them to the same
+     * team with the same role.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (User $user): void {
+            if (! $user->isForceDeleting()) {
+                return;
+            }
+
+            $user->assignToTeam(null);
+        });
+    }
+
+    /**
+     * The rows `model:prune` may destroy on this run.
+     *
+     * Unconditional: nothing contains a user, so unlike Document and Image
+     * there is no parent bin to wait inside.
+     *
+     * @return Builder<static>
+     */
+    public function prunable(): Builder
+    {
+        return static::where('deleted_at', '<=', now()->subDays(self::RETENTION_DAYS));
     }
 
     public function images(): HasMany

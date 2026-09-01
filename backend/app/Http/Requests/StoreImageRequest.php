@@ -26,7 +26,14 @@ class StoreImageRequest extends FormRequest
                     ->whereNull('deleted_at')
                     ->when(
                         ! $this->user()->is_super_admin,
-                        fn ($rule) => $rule->where('team_id', $this->user()->teamAssignment()['team_id'] ?? null),
+                        // 0 for a team-less caller, not null, and the fallback
+                        // must stay *inside* the constraint rather than skipping
+                        // it: dropping the where for a team-less user would let
+                        // them file an image under any live document in the app.
+                        // No team has id 0, so this matches nothing - the same
+                        // sentinel ImageValidationRules::title() uses one line
+                        // below for a missing document_id.
+                        fn ($rule) => $rule->where('team_id', $this->user()->teamAssignment()['team_id'] ?? 0),
                     ),
             ],
             // Scoped to the document, which the sibling rule above validates.

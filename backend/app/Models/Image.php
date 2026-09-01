@@ -6,6 +6,7 @@ use Database\Factories\ImageFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Prunable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -19,12 +20,20 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
 class Image extends Model implements HasMedia
 {
     /** @use HasFactory<ImageFactory> */
-    use HasFactory, InteractsWithMedia, Searchable, SoftDeletes;
+    use HasFactory, InteractsWithMedia, Prunable, Searchable, SoftDeletes;
 
     /**
      * The media collection holding the image's own uploaded file.
      */
     public const IMAGES_COLLECTION = 'images';
+
+    /**
+     * How long a binned image is kept before it is destroyed for good.
+     *
+     * The shortest window in the app, per req.txt. Hours rather than days
+     * because that is how the requirement and the SPA's trash note both read.
+     */
+    public const RETENTION_HOURS = 24;
 
     /**
      * Alias for the join onto `users` that puts the creator's name inside
@@ -143,6 +152,41 @@ class Image extends Model implements HasMedia
             );
     }
 
+    /**
+     * The rows `model:prune` may destroy on this run.
+     *
+     * The clock alone is not enough. Document::booted() stamps an image with
+     * the *document's* deleted_at when a document is binned, so an image
+     * trashed as part of its document is indistinguishable by timestamp from
+     * one binned on its own - and the document survives for seven days against
+     * this image's twenty-four hours. Pruning on the timestamp alone would
+     * empty a document's bin on day one and hand back an empty document on day
+     * six, breaking the restore-whole guarantee Document::restoring() exists to
+     * make.
+     *
+     * So an image is only ever prunable on its own clock while its document is
+     * live. One trashed under its document waits, and is destroyed by
+     * the document's own force-delete hook when its window runs out.
+     *
+     * whereHas('document') is the whole test: document() is a belongsTo onto a
+     * soft-deleting model, so it carries Document's scope and matches live
+     * documents only. images.document_id is NOT NULL, so there is no null case
+     * to allow for here - the same shape as Document::prunable() one rung up,
+     * whose team_id is NOT NULL too.
+     *
+     * No force-delete hook of its own: an image is the leaf of the hierarchy, and
+     * forceDelete() on a HasMedia model already takes its file, conversions and
+     * media row with it. category_image.image_id is cascadeOnDelete, so the
+     * pivot goes too.
+     *
+     * @return Builder<static>
+     */
+    public function prunable(): Builder
+    {
+        return static::where('deleted_at', '<=', now()->subHours(self::RETENTION_HOURS))
+            ->whereHas('document');
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -157,9 +201,10 @@ class Image extends Model implements HasMedia
      * Whether the owning document is itself in the bin.
      *
      * document() cannot answer this: it carries Document's soft-delete scope, so
-     * it resolves to null for a trashed document. images.document_id is NOT
-     * NULL, so there is no "no document" case to exempt the way
-     * Document::teamIsTrashed() has to exempt a team-less document.
+     * it resolves to null for a trashed document - the same trap
+     * ImagePolicy::teamOfImage() exists to avoid. images.document_id is NOT
+     * NULL, so a null here always means trashed and never absent, exactly as
+     * Document::teamIsTrashed() reads its team.
      *
      * How this image came to be in the bin makes no difference. One binned on
      * its own, whose document was deleted afterwards, is refused a restore just
@@ -183,7 +228,10 @@ class Image extends Model implements HasMedia
      * truth that drifts the moment a document is moved between teams.
      *
      * A team-less non-super-admin matches nothing, which is correct: they have
-     * no team whose entries they could be entitled to.
+     * no team whose entries they could be entitled to. Said outright rather
+     * than passed down as a null, which Builder rewrites to `IS NULL` and so
+     * happens to return the same empty set — but only because documents.team_id
+     * is NOT NULL. See Document::scopeVisibleTo(), which does the same.
      */
     public function scopeVisibleTo(Builder $query, User $user): void
     {
@@ -192,6 +240,12 @@ class Image extends Model implements HasMedia
         }
 
         $teamId = $user->teamAssignment()['team_id'] ?? null;
+
+        if ($teamId === null) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
 
         $query->whereHas('document', fn (Builder $document) => $document->where('team_id', $teamId));
     }
