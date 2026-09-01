@@ -41,6 +41,12 @@ class DatabaseSeeder extends Seeder
             'password' => '12345678',
             'is_super_admin' => true,
         ]);
+        User::factory()->create([
+            'name' => 'Jane Doe',
+            'email' => 'janedoe@example.com',
+            'password' => '12345678',
+            'is_super_admin' => true,
+        ]);
 
         $this->call(CategorySeeder::class);
 

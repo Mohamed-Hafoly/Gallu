@@ -109,9 +109,8 @@ class Image extends Model implements HasMedia
      * belongsTo, so the join is many-to-one and cannot duplicate a row - which
      * is why a join is safe here even though the creator *sort* in
      * ImageController::index() must stay a correlated subselect (it has to work
-     * on an unsearched listing, where there is no join at all). Inner rather
-     * than left, because images.user_id is NOT NULL. Aliased, so it cannot
-     * collide with the `users` that sort subselect brings into scope.
+     * on an unsearched listing, where there is no join at all). Aliased, so it
+     * cannot collide with the `users` that sort subselect brings into scope.
      */
     public function newScoutQuery(ScoutBuilder $builder): Builder
     {
@@ -125,9 +124,22 @@ class Image extends Model implements HasMedia
             // Required once anything is joined, or the joined `id` column
             // overwrites images.id as the row is hydrated.
             ->select($this->getTable().'.*')
-            ->join(
+            // Left, with the deleted_at test in the ON clause rather than a
+            // where: a binned author's row still exists, so an inner join would
+            // keep matching their name and search would surface content the
+            // resource labels "[deleted]" - while the creator *sort*, an
+            // Eloquent subselect that does carry the scope, files it under null.
+            // Those three have to agree. Putting the test in a where instead
+            // would drop the rows from the listing altogether rather than merely
+            // making the name unmatchable.
+            //
+            // Nullable user_id since users became soft-deletable makes a left
+            // join the correct shape regardless.
+            ->leftJoin(
                 'users as '.self::SEARCH_CREATOR,
-                self::SEARCH_CREATOR.'.id', '=', 'images.user_id',
+                fn ($join) => $join
+                    ->on(self::SEARCH_CREATOR.'.id', '=', 'images.user_id')
+                    ->whereNull(self::SEARCH_CREATOR.'.deleted_at'),
             );
     }
 

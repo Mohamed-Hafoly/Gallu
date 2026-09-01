@@ -56,28 +56,40 @@ class UserController extends Controller
     {
         Gate::authorize('viewAny', User::class);
 
+        $trashed = $request->input('trashed');
+
+        // Authorised rather than silently ignored, as on documents and images: a
+        // caller who forges the flag should be told no, not handed a quietly
+        // different list they cannot distinguish from an empty bin.
+        if ($trashed !== null) {
+            Gate::authorize('viewTrashed', User::class);
+        }
+
         $search = $request->string('search')->trim()->toString();
         $sortBy = $request->input('sort_by') ?: 'id';
         $direction = $request->input('sort_order') ?: 'asc';
 
-        $builder = User::search(
-            // An empty term is no search at all: Scout's database engine leaves
-            // the query untouched when the term is blank, so this needs no
-            // conditional of its own - only the callback does, or the team half
-            // below would LIKE '%%' and match every row.
-            $search,
-            // The name and email halves come from User::toSearchableArray(),
-            // which the engine turns into one grouped OR. The team name cannot
-            // join them there - it is not a `users` column - so it arrives
-            // here: the database engine hands this callback the very same
-            // query, after that group, making the whole thing read
-            // `(name OR email) OR team`.
+        // Which columns are searched is User::toSearchableArray()'s to say, and
+        // the engine wraps them in one OR group. The team name is inside that
+        // group through the join User::newScoutQuery() adds - deliberately not
+        // through search()'s callback, which appends at the top level where the
+        // engine's own deleted_at test would bind to only the last branch. Read
+        // the note on newScoutQuery() before moving it back.
+        //
+        // An empty term is no search at all: the engine leaves the query alone
+        // when the term is blank, so this needs no conditional.
+        $builder = User::search($search)
+            // The bin, on the Scout builder rather than inside query() below -
+            // constrainForSoftDeletes() runs after that callback and would
+            // override an Eloquent-level onlyTrashed() there. Users reached this
+            // path only when they became soft-deletable; the live listing needs
+            // nothing, since search() seeds __soft_deleted = 0 on its own.
             //
-            // Note that passing a callback makes the engine skip Scout's own
-            // where()/whereIn() clauses. Nothing here uses them, and a filter
-            // added later belongs in query() below rather than there.
-            $search === '' ? null : fn (Builder $query) => $query->orWhereTeamNameLike($search),
-        )
+            // Unaffected by the engine callback above: constrainForSoftDeletes()
+            // reads the builder's wheres directly rather than going through
+            // addAdditionalConstraints(), which is what the callback suppresses.
+            ->when($trashed === 'with', fn ($builder) => $builder->withTrashed())
+            ->when($trashed === 'only', fn ($builder) => $builder->onlyTrashed())
             // The engine applies this straight to the database query, so both
             // eager loads land before the rows are read.
             //
@@ -219,9 +231,38 @@ class UserController extends Controller
         // unconditionally, so a policy check here would never be reached.
         abort_if($user->is($request->user()), 403);
 
-        // Media Library cascades the avatar's media rows and files on delete.
+        // A soft delete since users joined the rest of req.txt's "every entry
+        // should be soft deleted". The avatar deliberately survives it: Media
+        // Library's own deleting hook returns early unless the model is being
+        // force deleted, so a restore brings the user back whole.
+        //
+        // Their documents and images stay live and keep their team - only the
+        // authorship goes, read as null by the resources. See User's docblock
+        // for why there is no cascade here.
         $user->delete();
 
         return response()->noContent();
+    }
+
+    /**
+     * Undo a soft delete, from the admin screen's pending-deletion table.
+     *
+     * Mirrors TeamController::restore(), including the 404 on a live row: the
+     * route is bound withTrashed(), so a live user resolves here perfectly well
+     * and would otherwise be "restored" to no effect.
+     *
+     * Their team membership comes back with them without anything happening
+     * here - the model_has_roles row was never touched, it was only hidden by
+     * User's global scope reaching Team::members().
+     */
+    public function restore(User $user): UserResource
+    {
+        Gate::authorize('restore', $user);
+
+        abort_if(! $user->trashed(), 404);
+
+        $user->restore();
+
+        return new UserResource($user->load('media'));
     }
 }

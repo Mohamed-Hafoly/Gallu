@@ -33,6 +33,11 @@ class UserFactory extends Factory
             // Stated rather than left to the column default, so an in-memory
             // instance reads false instead of null before it is refetched.
             'is_super_admin' => false,
+            // Same reason, and load-bearing under Model::shouldBeStrict: a
+            // factory instance handed straight to actingAs() is never refetched,
+            // so UserResource reading $this->deleted_at would throw
+            // MissingAttributeException rather than serialize a live user.
+            'deleted_at' => null,
         ];
     }
 

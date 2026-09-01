@@ -1,6 +1,8 @@
 <?php
 
 use App\Enums\RoleName;
+use App\Models\Document;
+use App\Models\Image;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -486,15 +488,242 @@ it('clears the avatar and falls back to the default image', function () {
     expect($target->fresh()->getMedia(User::AVATAR_COLLECTION))->toHaveCount(0);
 });
 
-it('permanently deletes a user', function () {
+// Users were the last entity still hard deleted, against req.txt's "Every entry
+// should be soft deleted". The avatar survives on purpose: Media Library's own
+// deleting hook returns early unless the model is being force deleted, so a
+// restore brings the user back whole.
+it('soft deletes a user, keeping their avatar for a restore', function () {
     $admin = superAdmin();
     $target = User::factory()->create();
+    $target->setAvatarFromFile(UploadedFile::fake()->image('me.jpg', 600, 600));
 
     actingAs($admin)
         ->deleteJson("/api/users/{$target->id}")
         ->assertNoContent();
 
-    $this->assertDatabaseMissing('users', ['id' => $target->id]);
+    $this->assertSoftDeleted('users', ['id' => $target->id]);
+
+    // fresh() carries the global scope, so a binned user needs withTrashed().
+    $binned = User::withTrashed()->find($target->id);
+    expect($binned->getMedia(User::AVATAR_COLLECTION))->toHaveCount(1);
+});
+
+// Membership is the model_has_roles row, which the soft delete never touches -
+// it is only hidden, because Team::members() is a morphedByMany onto User and
+// so inherits the global scope. That is what makes this restore lossless.
+it('restores a user with their team and role intact', function () {
+    $admin = superAdmin();
+    $team = Team::factory()->create();
+    $target = User::factory()->create();
+    $target->assignToTeam($team, RoleName::Admin);
+
+    actingAs($admin)->deleteJson("/api/users/{$target->id}")->assertNoContent();
+
+    actingAs($admin)
+        ->postJson("/api/users/{$target->id}/restore")
+        ->assertOk()
+        ->assertJsonPath('data.id', $target->id)
+        ->assertJsonPath('data.deleted_at', null);
+
+    $restored = User::find($target->id);
+    expect($restored)->not->toBeNull();
+    expect($restored->teamAssignment()['team_id'] ?? null)->toBe($team->id);
+    expect($restored->role())->toBe(RoleName::Admin);
+});
+
+it('refuses to restore a user who is not trashed', function () {
+    $admin = superAdmin();
+    $target = User::factory()->create();
+
+    actingAs($admin)->postJson("/api/users/{$target->id}/restore")->assertNotFound();
+});
+
+it('refuses to let a plain user restore anyone', function () {
+    $target = User::factory()->create();
+    $target->delete();
+
+    actingAs(User::factory()->create())
+        ->postJson("/api/users/{$target->id}/restore")
+        ->assertForbidden();
+});
+
+// EloquentUserProvider::retrieveById() goes through newModelQuery(), which
+// applies global scopes - so this needs no code of its own, and a test because
+// of that rather than in spite of it.
+it('refuses to log a soft deleted user in', function () {
+    $target = User::factory()->create(['email' => 'gone@example.com']);
+    $target->delete();
+
+    postJson('/api/login', ['email' => 'gone@example.com', 'password' => 'password'])
+        ->assertStatus(422);
+});
+
+// Rule::unique is a raw query-builder check that ignores global scopes, and
+// users_email_unique is absolute either way. Deliberate: the address stays
+// reserved so a restore always returns the same user.
+it('still treats a soft deleted users email as taken', function () {
+    $admin = superAdmin();
+    $target = User::factory()->create(['email' => 'gone@example.com']);
+    $target->delete();
+
+    actingAs($admin)
+        ->postJson('/api/users', userPayload(['email' => 'gone@example.com']))
+        ->assertJsonValidationErrorFor('email');
+});
+
+it('drops a soft deleted user from their teams member count', function () {
+    $admin = superAdmin();
+    $team = Team::factory()->create();
+    $target = User::factory()->create();
+    $target->assignToTeam($team, RoleName::Member);
+
+    $count = fn () => actingAs($admin)->getJson('/api/teams')->json('data.0.members_count');
+
+    expect($count())->toBe(1);
+
+    $target->delete();
+
+    expect($count())->toBe(0);
+});
+
+// The whole point of the design: a user is not a container for their content,
+// the team is. Binning a member must not bin the documents and images their
+// team still works with - only the authorship goes.
+it('leaves a soft deleted users documents and images in place, with no creator', function () {
+    $team = Team::factory()->create();
+    $author = User::factory()->create(['name' => 'Ada Lovelace']);
+    $author->assignToTeam($team, RoleName::Admin);
+
+    $document = Document::factory()->for($author)->create(['team_id' => $team->id]);
+    Image::factory()->for($author)->for($document)->create();
+
+    $author->delete();
+
+    $admin = superAdmin();
+
+    actingAs($admin)
+        ->getJson('/api/documents?per_page=-1')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $document->id)
+        ->assertJsonPath('data.0.creator', null);
+
+    actingAs($admin)
+        ->getJson('/api/images?per_page=-1')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.creator', null);
+});
+
+// Search has to agree with what the reader sees. The creator joins in
+// newScoutQuery() filter binned authors out in their ON clause, so their name
+// stops matching, while the row itself stays in the listing.
+it('stops matching a soft deleted authors name in search', function (string $endpoint) {
+    $team = Team::factory()->create();
+    $author = User::factory()->create(['name' => 'Ada Lovelace']);
+    $author->assignToTeam($team, RoleName::Admin);
+
+    $document = Document::factory()->for($author)->create([
+        'team_id' => $team->id,
+        'title' => 'Alpha',
+        'description' => null,
+    ]);
+    Image::factory()->for($author)->for($document)->create([
+        'title' => 'Alpha',
+        'description' => null,
+    ]);
+
+    $admin = superAdmin();
+
+    // Findable by the author while they are live.
+    actingAs($admin)->getJson($endpoint.'?per_page=-1&search=Lovelace')->assertJsonCount(1, 'data');
+
+    $author->delete();
+
+    actingAs($admin)->getJson($endpoint.'?per_page=-1&search=Lovelace')->assertJsonCount(0, 'data');
+    // Still listed, just no longer attributable.
+    actingAs($admin)->getJson($endpoint.'?per_page=-1')->assertJsonCount(1, 'data');
+})->with(['/api/documents', '/api/images']);
+
+it('serves the trashed side of the users listing only when asked', function () {
+    $admin = superAdmin();
+    $binned = User::factory()->create();
+    $binned->delete();
+
+    $ids = fn (string $query) => actingAs($admin)
+        ->getJson('/api/users?per_page=-1&'.$query)
+        ->assertOk()
+        ->json('data.*.id');
+
+    expect($ids(''))->toBe([$admin->id]);
+    expect($ids('trashed=only'))->toBe([$binned->id]);
+    expect($ids('trashed=with'))->toEqualCanonicalizing([$admin->id, $binned->id]);
+});
+
+// Regression, and the reason the team name is a join in newScoutQuery() rather
+// than an engine callback. A callback appends at the top level, where the
+// engine's own deleted_at test also lands - so the query read
+// `(name OR email) OR EXISTS(team) AND deleted_at IS NULL` and the soft-delete
+// test covered only the last branch. A binned user came back the moment their
+// name was searched. Not caught by scope nesting: withoutTrashed() is a Builder
+// macro, not a local scope.
+it('keeps a binned user out of a searched live listing', function () {
+    $admin = superAdmin();
+    $binned = User::factory()->create(['name' => 'Ada Lovelace']);
+    $binned->delete();
+
+    actingAs($admin)
+        ->getJson('/api/users?per_page=-1&search=Lovelace')
+        ->assertOk()
+        ->assertJsonCount(0, 'data')
+        ->assertJsonPath('meta.total', 0);
+});
+
+// The same leak in the other direction, and the louder half: with the callback
+// in place, `trashed=only` plus a term matching live users returned every one of
+// them, so the bin filled with users who were never deleted.
+it('keeps live users out of a searched trash listing', function () {
+    $admin = superAdmin();
+    User::factory()->count(3)->create(['name' => 'Ada Lovelace']);
+    $binned = User::factory()->create(['name' => 'Ada Lovelace']);
+    $binned->delete();
+
+    actingAs($admin)
+        ->getJson('/api/users?per_page=-1&trashed=only&search=Lovelace')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $binned->id);
+});
+
+// The join must not multiply rows: nothing at the database level stops a user
+// holding more than one role row, which a plain join onto the pivot would turn
+// into duplicate listing rows.
+it('returns one row per user when searching by team', function () {
+    $admin = superAdmin();
+    $team = Team::factory()->create(['name' => 'Analytical Engines']);
+    $member = User::factory()->create();
+    $member->assignToTeam($team, RoleName::Member);
+
+    actingAs($admin)
+        ->getJson('/api/users?per_page=-1&search='.urlencode('lytical Eng'))
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $member->id);
+});
+
+it('rejects a trashed mode outside the enum', function () {
+    actingAs(superAdmin())
+        ->getJson('/api/users?trashed=everything')
+        ->assertJsonValidationErrorFor('trashed');
+});
+
+it('404s when updating or deleting a trashed user', function () {
+    $admin = superAdmin();
+    $target = User::factory()->create();
+    $target->delete();
+
+    actingAs($admin)->patchJson("/api/users/{$target->id}", ['name' => 'Ghost'])->assertNotFound();
+    actingAs($admin)->deleteJson("/api/users/{$target->id}")->assertNotFound();
 });
 
 it('refuses to let a super admin delete themselves', function () {

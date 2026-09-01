@@ -8,12 +8,14 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Laravel\Scout\Builder as ScoutBuilder;
 use Laravel\Scout\Searchable;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
@@ -25,7 +27,35 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements HasMedia
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasRoles, InteractsWithMedia, Notifiable, Searchable;
+    use HasFactory, HasRoles, InteractsWithMedia, Notifiable, Searchable, SoftDeletes;
+
+    /**
+     * There is deliberately no booted() cascade here, unlike Team and Document.
+     *
+     * Those two cascade because they are containers: an image cannot outlive the
+     * document that gives it a place in the hierarchy, and a document cannot
+     * outlive its team. A user is not a container for the content they authored
+     * - the team is, which is what both scopeVisibleTo() methods scope by - so
+     * binning a member must not bin the documents and images their team still
+     * works with. The authorship goes, the content stays.
+     *
+     * What follows from the trait alone is most of the behaviour: every
+     * belongsTo(User) now carries the global scope, so $document->user and
+     * $image->user read null for a binned author and the resources render that
+     * as "[deleted]"; Team::members() is a morphedByMany onto this model, so a
+     * binned user leaves member lists and members_count without any filter of
+     * its own; and EloquentUserProvider::retrieveById() applies global scopes,
+     * so they cannot log in and an open session stops resolving.
+     *
+     * The model_has_roles row is untouched by any of that, which is what lets a
+     * restore put them back in the same team with the same role.
+     */
+
+    /**
+     * Alias for the join that puts the team's name inside Scout's search group.
+     * Shared with toSearchableArray() so the two cannot drift.
+     */
+    public const SEARCH_TEAM = 'search_team';
 
     /**
      * The media collection holding the user's profile image.
@@ -110,7 +140,62 @@ class User extends Authenticatable implements HasMedia
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
+            self::SEARCH_TEAM.'.name' => null,
         ];
+    }
+
+    /**
+     * The query Scout's database engine builds its search on.
+     *
+     * The team name lives behind model_has_roles rather than on `users`, and it
+     * has to be searchable *inside* the engine's OR group rather than beside it.
+     * It used to ride in through search()'s callback, which appends at the top
+     * level - and that quietly broke the moment users became soft-deletable:
+     * constrainForSoftDeletes() adds its deleted_at test at the top level too,
+     * so the query read
+     *
+     *     WHERE (name LIKE ? OR email LIKE ?) OR EXISTS(team ...) AND deleted_at IS NULL
+     *
+     * and AND binds tighter than OR - the soft-delete test covered only the last
+     * branch. A binned user surfaced in the live listing as soon as their name
+     * was searched, and `trashed=only` returned every live user whose email
+     * matched. Neither is caught by scopeVisibleTo()-style scope nesting:
+     * withoutTrashed() and onlyTrashed() are Builder macros, not local scopes,
+     * so callScope() never wraps anything for them.
+     *
+     * Joining here puts the team name in the same group as name and email, so
+     * whatever the engine ANDs on afterwards applies to all of it. Document and
+     * Image do the same thing for the same reason.
+     *
+     * A grouped derived table rather than a plain join onto the pivot: nothing
+     * at the database level stops a user holding two role rows - the composite
+     * key is (team_id, role_id, model_id, model_type), and only
+     * User::assignToTeam() enforces one - so a direct join could duplicate a
+     * row in the listing. Trashed teams are excluded, exactly as
+     * teamAssignmentQuery() does everywhere else, so a binned team reads as no
+     * team here too.
+     */
+    public function newScoutQuery(ScoutBuilder $builder): Builder
+    {
+        // Nothing to search means nothing to join.
+        if (blank($builder->query)) {
+            return static::query();
+        }
+
+        $morphKey = self::pivotColumn(Config::morphKey());
+
+        return static::query()
+            // Required once anything is joined, or the joined columns collide
+            // with the model's own as the row is hydrated.
+            ->select($this->getTable().'.*')
+            ->leftJoinSub(
+                self::teamAssignmentQuery()
+                    ->where(self::pivotColumn('model_type'), $this->getMorphClass())
+                    ->select($morphKey.' as model_id', DB::raw('min(teams.name) as name'))
+                    ->groupBy($morphKey),
+                self::SEARCH_TEAM,
+                self::SEARCH_TEAM.'.model_id', '=', $this->getTable().'.'.$this->getKeyName(),
+            );
     }
 
     public function images(): HasMany
@@ -213,29 +298,6 @@ class User extends Authenticatable implements HasMedia
             'team_assignment_name' => $select('teams.name'),
             'team_assignment_role' => $select('roles.name'),
         ]);
-    }
-
-    /**
-     * Match a user whose live team's name contains the term.
-     *
-     * `or`, because this is the third clause of the users search, beside the
-     * name and email ones toSearchableArray() declares. Scout's database engine
-     * adds those two as a single nested group and then hands this scope's
-     * caller - the engine callback in UserController::index() - the same query,
-     * so an `or` here reads as `(name OR email) OR team`.
-     *
-     * An EXISTS rather than the `team_assignment_name` alias withTeamAssignment()
-     * already selects: an alias is resolvable in ORDER BY - which is how the
-     * team *sort* works - but not in WHERE. MySQL rejects it outright while
-     * SQLite quietly allows it, and the suite runs on SQLite, so the difference
-     * is one only the dev database would have shown.
-     */
-    public function scopeOrWhereTeamNameLike(Builder $query, string $search): void
-    {
-        $query->orWhereExists(
-            fn (QueryBuilder $sub) => $this->correlatedTeamAssignment($sub)
-                ->where('teams.name', 'like', "%{$search}%"),
-        );
     }
 
     /**

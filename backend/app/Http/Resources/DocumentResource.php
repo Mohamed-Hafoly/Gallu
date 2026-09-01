@@ -52,7 +52,17 @@ class DocumentResource extends JsonResource
             // cannot exist. whenLoaded() would hide a forgotten eager load by
             // silently dropping the key; read directly and it throws under
             // Model::shouldBeStrict instead.
-            'creator' => $this->user->name,
+            // Null once the author is binned: belongsTo(User) carries User's
+            // soft-delete scope, so this reads null for a deleted author while
+            // they are still recoverable, and again permanently if the row is
+            // ever force deleted - documents.user_id is nullOnDelete. The SPA
+            // renders either case as "[deleted]"; the content itself belongs to
+            // the team and stays where it is.
+            //
+            // Still unconditional rather than whenLoaded(): a missing eager load
+            // must throw under Model::shouldBeStrict rather than silently
+            // dropping the key, which is the distinction whenLoaded() would lose.
+            'creator' => $this->user?->name,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             // Null for a live document; the admin screen reads it to tell the

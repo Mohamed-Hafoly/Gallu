@@ -155,11 +155,15 @@ class Document extends Model
      *
      * Both joins are many-to-one, so neither can duplicate a row - which is why
      * a join is safe here even though the *sorts* in DocumentController::index()
-     * must stay correlated subselects. The team side is a LEFT join because
-     * documents.team_id is nullable, and carries no deleted_at filter on
-     * purpose: a document that went down with its team is still findable by
-     * that team's name, which is what the withTrashed() on the old orWhereHas
-     * did.
+     * must stay correlated subselects. Both are LEFT joins: team_id is
+     * nullable, and user_id became nullable when users turned soft-deletable.
+     *
+     * They differ on deleted_at, deliberately, because each matches what the
+     * row actually displays. A trashed *team* still shows its name in the team
+     * cell, so that join carries no filter and the document stays findable by
+     * it - what the withTrashed() on the old orWhereHas did. A binned *author*
+     * shows as "[deleted]", so that join filters them out and their name stops
+     * matching. Search should find what the reader can see.
      *
      * Aliased rather than joined bare, so nothing collides with the `users` and
      * `teams` those sort subselects bring into scope.
@@ -176,9 +180,22 @@ class Document extends Model
             // Required once anything is joined, or the joined `id` columns
             // overwrite documents.id as the row is hydrated.
             ->select($this->getTable().'.*')
-            ->join(
+            // Left, with the deleted_at test in the ON clause rather than a
+            // where: a binned author's row still exists, so an inner join would
+            // keep matching their name and search would surface content the
+            // resource labels "[deleted]" - while the creator *sort*, an
+            // Eloquent subselect that does carry the scope, files it under null.
+            // Those three have to agree. Putting the test in a where instead
+            // would drop the rows from the listing altogether rather than merely
+            // making the name unmatchable.
+            //
+            // Nullable user_id since users became soft-deletable makes a left
+            // join the correct shape regardless.
+            ->leftJoin(
                 'users as '.self::SEARCH_CREATOR,
-                self::SEARCH_CREATOR.'.id', '=', 'documents.user_id',
+                fn ($join) => $join
+                    ->on(self::SEARCH_CREATOR.'.id', '=', 'documents.user_id')
+                    ->whereNull(self::SEARCH_CREATOR.'.deleted_at'),
             )
             ->leftJoin(
                 'teams as '.self::SEARCH_TEAM,

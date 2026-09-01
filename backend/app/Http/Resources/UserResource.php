@@ -36,6 +36,9 @@ class UserResource extends JsonResource
             'default_avatar_url' => asset(User::DEFAULT_AVATAR_PATH),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
+            // Null on every live user, which is how the admin screen splits its
+            // two tables - the same shape TeamResource and DocumentResource use.
+            'deleted_at' => $this->deleted_at,
             // Both read the same column, so they cannot disagree. `role` is
             // the display vocabulary; `is_super_admin` is the predicate the SPA
             // gates its nav and route guard on.

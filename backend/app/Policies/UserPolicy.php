@@ -36,4 +36,18 @@ class UserPolicy
     {
         return false;
     }
+
+    /**
+     * Query-level, like DocumentPolicy::viewTrashed() - there is no instance to
+     * judge when the caller is only asking to see the bin.
+     */
+    public function viewTrashed(User $user): bool
+    {
+        return false;
+    }
+
+    public function restore(User $user, User $target): bool
+    {
+        return false;
+    }
 }

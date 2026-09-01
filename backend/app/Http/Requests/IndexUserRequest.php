@@ -28,6 +28,11 @@ class IndexUserRequest extends FormRequest
             'sort_by' => ['sometimes', 'nullable', 'string', Rule::in(UserController::SORTABLE)],
             'sort_order' => ['sometimes', 'nullable', 'string', Rule::in(['asc', 'desc'])],
             'search' => ['sometimes', 'nullable', 'string', 'max:255'],
+            // Which side of the soft delete to serve, as on documents and
+            // images. Absent means live only, which is what keeps binned users
+            // out of the main table. Authorised in the controller against
+            // UserPolicy::viewTrashed().
+            'trashed' => ['sometimes', 'nullable', 'string', Rule::in(['with', 'only'])],
         ];
     }
 }

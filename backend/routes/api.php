@@ -63,6 +63,10 @@ Route::middleware(['auth:sanctum', SetPermissionsTeam::class])->group(function (
     Route::post('/users', [UserController::class, 'store']);
     Route::patch('/users/{user}', [UserController::class, 'update']);
     Route::delete('/users/{user}', [UserController::class, 'destroy']);
+    // withTrashed(), like the image, category, document and team restore routes:
+    // without it the soft-deleted user the admin screen is trying to restore
+    // 404s at binding.
+    Route::post('/users/{user}/restore', [UserController::class, 'restore'])->withTrashed();
 
     Route::get('/gallery', fn () => 'hellp');
     Route::get('/profile', fn () => 'hellp');
