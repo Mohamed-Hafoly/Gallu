@@ -125,7 +125,15 @@ class UserController extends Controller
             // is no substitute: it is skipped the moment any column is declared
             // full-text, and it breaks ties the other way round, which would
             // reorder the team sort for no reason.
-            ->orderBy('id');
+            //
+            // The direction follows the primary sort rather than being fixed
+            // ascending. That is what lets the timestamp indexes actually serve
+            // the ORDER BY: `created_at DESC, id ASC` is a *mixed-direction*
+            // order, which no single B-tree index can satisfy, so MySQL falls
+            // back to a filesort even while using the index for the lookup.
+            // Matching the directions keeps it a total order - so the tie-break
+            // is exactly as stable - while making the sort index-ordered.
+            ->orderBy('id', $direction);
 
         $perPage = $request->integer('per_page');
 

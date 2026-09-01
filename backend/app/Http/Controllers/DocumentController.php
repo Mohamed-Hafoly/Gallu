@@ -212,7 +212,15 @@ class DocumentController extends Controller
             // column is declared full-text, and `description` is - so on this
             // model there is no implicit one at all. Qualified, because `id` is
             // ambiguous once newScoutQuery() has joined.
-            ->orderBy('documents.id');
+            //
+            // The direction follows the primary sort rather than being fixed
+            // ascending. That is what lets the timestamp indexes actually serve
+            // the ORDER BY: `created_at DESC, id ASC` is a *mixed-direction*
+            // order, which no single B-tree index can satisfy, so MySQL falls
+            // back to a filesort even while using the index for the lookup.
+            // Matching the directions keeps it a total order - so the tie-break
+            // is exactly as stable - while making the sort index-ordered.
+            ->orderBy('documents.id', $direction);
 
         // Absent means *everything*, as in ImageController::index and unlike
         // IndexUserRequest's caller: this endpoint's second caller is the

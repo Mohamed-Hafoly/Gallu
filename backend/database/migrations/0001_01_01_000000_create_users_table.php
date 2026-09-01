@@ -23,6 +23,24 @@ return new class extends Migration
             $table->string('password');
             $table->rememberToken();
             $table->timestamps();
+            // Every entry is soft deleted, model_has_roles row survives untouched,
+            // so a restore returns them to
+            // the same team with the same role.
+            $table->softDeletes();
+
+            // Sorting indexes, one per timestamp column. An index can only serve
+            // an ORDER BY when the columns the query filters by *equality* come
+            // first, so each is prefixed by the soft delete, which is single-valued under IS NULL
+            // and so leaves the suffix already in timestamp order.
+            //
+            // The admin users table arrives unsorted (id, free via the primary key);
+            // these serve a click on the Created / Updated headers.
+            //
+            // The bin is deliberately not covered: `deleted_at IS NOT NULL` is a
+            // range rather than a single value, which breaks the ordering behind
+            // it, so a trashed listing still filesorts. It is rare and small.
+            $table->index(['deleted_at', 'created_at']);
+            $table->index(['deleted_at', 'updated_at']);
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

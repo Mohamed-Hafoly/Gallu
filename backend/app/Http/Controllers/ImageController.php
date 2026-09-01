@@ -149,7 +149,15 @@ class ImageController extends Controller
             // column is declared full-text, and `description` is - so on this
             // model there is no implicit one at all. Qualified, because `id` is
             // ambiguous once newScoutQuery() has joined.
-            ->orderBy('images.id');
+            //
+            // The direction follows the primary sort rather than being fixed
+            // ascending. That is what lets the timestamp indexes actually serve
+            // the ORDER BY: `created_at DESC, id ASC` is a *mixed-direction*
+            // order, which no single B-tree index can satisfy, so MySQL falls
+            // back to a filesort even while using the index for the lookup.
+            // Matching the directions keeps it a total order - so the tie-break
+            // is exactly as stable - while making the sort index-ordered.
+            ->orderBy('images.id', $direction);
 
         // Absent means *everything*, unlike IndexUserRequest's caller, which
         // always pages. This endpoint has a second caller - the gallery, which
