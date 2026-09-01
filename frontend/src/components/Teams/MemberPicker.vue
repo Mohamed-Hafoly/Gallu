@@ -92,8 +92,8 @@
 
   /**
    * Reuses the admin users listing rather than a candidates endpoint of its own
-   * — it already searches name and email server-side under the same super-admin
-   * gate, and its rows carry the team each user is currently in.
+   * — it already searches id, name and email server-side under the same
+   * super-admin gate, and its rows carry the team each user is currently in.
    */
   function onSearch(term: string) {
     clearTimeout(searchTimer);

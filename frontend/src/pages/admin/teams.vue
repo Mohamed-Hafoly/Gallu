@@ -277,7 +277,7 @@
       </template>
 
       <template #item.creator="{ item }">
-        {{ item.creator || t("common.emptyValue") }}
+        {{ item.creator || t("common.deletedUser") }}
       </template>
 
       <template #item.created_at="{ item }">
@@ -381,7 +381,7 @@
       </template>
 
       <template #item.creator="{ item }">
-        {{ item.creator || t("common.emptyValue") }}
+        {{ item.creator || t("common.deletedUser") }}
       </template>
 
       <template #item.created_at="{ item }">

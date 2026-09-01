@@ -139,7 +139,7 @@
           <v-text-field
             disabled
             :label="t('admin.documents.creator')"
-            :model-value="document.creator"
+            :model-value="document.creator ?? t('common.deletedUser')"
           />
         </v-row>
 

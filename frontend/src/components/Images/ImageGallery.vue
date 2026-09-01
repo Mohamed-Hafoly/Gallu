@@ -579,7 +579,7 @@
             </v-card-title>
 
             <v-card-subtitle class="mr-1 ml-1">
-              {{ image.creator }}
+              {{ image.creator ?? t("common.deletedUser") }}
             </v-card-subtitle>
 
             <!--

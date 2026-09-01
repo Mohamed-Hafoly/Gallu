@@ -15,25 +15,44 @@
     sortBy: { key: string; order?: "asc" | "desc" }[];
   }
 
+  /**
+   * One table's worth of state. Two of these rather than a pile of parallel
+   * refs, because the live and pending-deletion tables page and sort
+   * independently — the same shape the documents screen uses.
+   */
+  interface TableState {
+    items: User[];
+    total: number;
+    loading: boolean;
+    page: number;
+    itemsPerPage: number;
+    sort: { key: string; order?: "asc" | "desc" }[];
+    selected: number[];
+  }
+
+  function tableState(): TableState {
+    return {
+      items: [],
+      total: 0,
+      loading: false,
+      page: 1,
+      itemsPerPage: 10,
+      sort: [],
+      selected: [],
+    };
+  }
+
   const { t } = useI18n();
   const { formatDateTime } = useDateFormat();
   const userStore = useUserStore();
   const authStore = useAuthStore();
   const notifier = useNotifierStore();
 
-  const users = ref<User[]>([]);
-  const total = ref(0);
-  const loading = ref(false);
+  const live = ref<TableState>(tableState());
+  const trash = ref<TableState>(tableState());
+
+  // Shared by both tables: one term, two listings.
   const search = ref("");
-
-  // The page controls this so the search watcher can force a jump back to page
-  // one; the table reads it back through :page.
-  const page = ref(1);
-  const itemsPerPage = ref(10);
-
-  // The last options the table emitted, replayed after an edit or a delete so
-  // the server stays the source of truth for whatever page is on screen.
-  const lastSort = ref<{ key: string; order?: "asc" | "desc" }[]>([]);
 
   // The user behind whichever dialog is open. Held rather than passed inline so
   // the dialogs keep rendering their content while closing.
@@ -44,11 +63,9 @@
   const deleteOpen = ref(false);
   const deletingInFlight = ref(false);
 
-  // Ids, because item-value defaults to "id" and return-object is off — same as
-  // the categories screen.
-  const selected = ref<number[]>([]);
   const bulkDeleteOpen = ref(false);
   const bulkInFlight = ref(false);
+  const restoringId = ref<number | null>(null);
 
   // Vuetify renders the sort arrow as a bare VIcon with no colour prop and no
   // slot of its own, so the only way to tint it is to reach it from the class
@@ -109,54 +126,90 @@
     { title: t("admin.users.actions"), key: "actions", sortable: false },
   ]);
 
-  function params(): UserListParams {
-    const [sort] = lastSort.value;
+  // The live columns, minus actions, plus when it was binned, then actions back
+  // at the end — the same arrangement the documents screen uses.
+  const trashedHeaders = computed(() => [
+    ...headers.value.filter((header) => header.key !== "actions"),
+    { title: t("admin.users.deletedAt"), key: "deleted_at", sortable: true },
+    { title: t("admin.users.actions"), key: "actions", sortable: false },
+  ]);
+
+  function params(state: TableState, trashed?: "only"): UserListParams {
+    const [sort] = state.sort;
 
     return {
-      page: page.value,
-      per_page: itemsPerPage.value,
+      page: state.page,
+      per_page: state.itemsPerPage,
       sort_by: sort?.key,
       sort_order: sort?.order,
       search: search.value || undefined,
+      trashed,
     };
   }
 
-  async function load() {
+  async function loadLive() {
     // Every page, sort and search change routes through here, so the selection
     // can never hold rows that are no longer on screen. Categories does not
     // need this — it loads every row at once.
-    selected.value = [];
-    loading.value = true;
+    live.value.selected = [];
+    live.value.loading = true;
     try {
-      const result = await userStore.fetchUsers(params());
-      users.value = result.items;
-      total.value = result.total;
+      const result = await userStore.fetchUsers(params(live.value));
+      live.value.items = result.items;
+      live.value.total = result.total;
     } finally {
-      loading.value = false;
+      live.value.loading = false;
     }
   }
 
+  async function loadTrash() {
+    trash.value.selected = [];
+    trash.value.loading = true;
+    try {
+      const result = await userStore.fetchUsers(params(trash.value, "only"));
+      trash.value.items = result.items;
+      trash.value.total = result.total;
+    } finally {
+      trash.value.loading = false;
+    }
+  }
+
+  /** A delete or a restore moves a row between the tables, so both refetch. */
+  function loadBoth() {
+    return Promise.all([loadLive(), loadTrash()]);
+  }
+
   /**
-   * The table fires this once on mount as well as on every page/sort change, so
+   * The tables fire these once on mount as well as on every page/sort change, so
    * there is no onMounted(load) — adding one would double-fetch.
    */
-  function onOptions(options: TableOptions) {
-    page.value = options.page;
-    itemsPerPage.value = options.itemsPerPage;
-    lastSort.value = options.sortBy;
+  function onLiveOptions(options: TableOptions) {
+    live.value.page = options.page;
+    live.value.itemsPerPage = options.itemsPerPage;
+    live.value.sort = options.sortBy;
 
-    load();
+    loadLive();
+  }
+
+  function onTrashOptions(options: TableOptions) {
+    trash.value.page = options.page;
+    trash.value.itemsPerPage = options.itemsPerPage;
+    trash.value.sort = options.sortBy;
+
+    loadTrash();
   }
 
   // Debounced so a typed word is one request rather than one per keystroke. The
   // reset to page one matters: searching from page 4 would otherwise land on an
-  // empty page of a much shorter result set.
+  // empty page of a much shorter result set — and it applies to both tables,
+  // since they share the term.
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   watch(search, () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
-      page.value = 1;
-      load();
+      live.value.page = 1;
+      trash.value.page = 1;
+      loadBoth();
     }, 300);
   });
 
@@ -187,12 +240,12 @@
   }
 
   async function onCreated() {
-    await load();
+    await loadLive();
     notifier.notify(t("admin.users.created"));
   }
 
   async function onUpdated() {
-    await load();
+    await loadLive();
     notifier.notify(t("admin.users.updated"));
   }
 
@@ -202,7 +255,7 @@
     deletingInFlight.value = true;
     try {
       await userStore.deleteUser(deleting.value.id);
-      await load();
+      await loadBoth();
       notifier.notify(t("admin.users.deleted"));
       deleteOpen.value = false;
     } catch {
@@ -212,37 +265,67 @@
     }
   }
 
+  async function restore(user: User) {
+    restoringId.value = user.id;
+    try {
+      await userStore.restoreUser(user.id);
+      await loadBoth();
+      notifier.notify(t("admin.users.restored"));
+    } catch {
+      notifier.notify(t("admin.users.restoreFailed"), "error");
+    } finally {
+      restoringId.value = null;
+    }
+  }
+
   /**
    * There is no batch endpoint, so each id is its own request. allSettled rather
    * than all: one rejection should not abandon the rest, and the count of
    * failures is what gets reported.
    */
-  async function bulkDestroy() {
-    const ids = [...selected.value];
-
+  async function runBulk(
+    ids: number[],
+    action: (id: number) => Promise<unknown>,
+    successKey: string,
+    failureKey: string,
+  ) {
     bulkInFlight.value = true;
     try {
-      const results = await Promise.allSettled(
-        ids.map((id) => userStore.deleteUser(id)),
-      );
+      const results = await Promise.allSettled(ids.map((id) => action(id)));
       const failed = results.filter((r) => r.status === "rejected").length;
 
-      // Also clears the selection, since load() resets it.
-      await load();
+      // Also clears both selections, since the loads reset them.
+      await loadBoth();
 
       if (failed > 0) {
-        notifier.notify(
-          t("admin.users.bulkDeleteFailed", { count: failed }),
-          "error",
-        );
+        notifier.notify(t(failureKey, { count: failed }), "error");
       } else {
-        notifier.notify(t("admin.users.bulkDeleted", { count: ids.length }));
+        notifier.notify(t(successKey, { count: ids.length }));
       }
-
-      bulkDeleteOpen.value = false;
     } finally {
       bulkInFlight.value = false;
     }
+  }
+
+  async function bulkDestroy() {
+    await runBulk(
+      [...live.value.selected],
+      (id) => userStore.deleteUser(id),
+      "admin.users.bulkDeleted",
+      "admin.users.bulkDeleteFailed",
+    );
+
+    bulkDeleteOpen.value = false;
+  }
+
+  // No confirm dialog, unlike bulk delete: restoring is not destructive.
+  async function bulkRestore() {
+    await runBulk(
+      [...trash.value.selected],
+      (id) => userStore.restoreUser(id),
+      "admin.users.bulkRestored",
+      "admin.users.bulkRestoreFailed",
+    );
   }
 </script>
 
@@ -270,19 +353,19 @@
     <!-- Server variant: no :search prop, the term rides along in the request
          params instead. -->
     <v-data-table-server
-      v-model="selected"
+      v-model="live.selected"
       :header-props="headerProps"
       :headers="headers"
       :item-selectable="(user: User) => !user.is_super_admin"
-      :items="users"
-      :items-length="total"
-      :items-per-page="itemsPerPage"
-      :loading="loading"
+      :items="live.items"
+      :items-length="live.total"
+      :items-per-page="live.itemsPerPage"
+      :loading="live.loading"
       :no-data-text="t('admin.users.empty')"
-      :page="page"
+      :page="live.page"
       :row-props="rowProps"
       show-select
-      @update:options="onOptions"
+      @update:options="onLiveOptions"
     >
       <template #top>
         <div class="bg-primary-darken-1 p-4 text-center">
@@ -301,7 +384,7 @@
           </v-btn>
         </div>
 
-        <div v-if="selected.length > 0" class="p-3">
+        <div v-if="live.selected.length > 0" class="p-3">
           <v-btn
             block
             color="error"
@@ -310,7 +393,7 @@
             variant="elevated"
             @click="bulkDeleteOpen = true"
           >
-            {{ t("admin.users.deleteSelected", { count: selected.length }) }}
+            {{ t("admin.users.deleteSelected", { count: live.selected.length }) }}
           </v-btn>
         </div>
       </template>
@@ -365,6 +448,95 @@
       </template>
     </v-data-table-server>
 
+    <!-- Restore-only: the update endpoint refuses a trashed row, and there is no
+         permanent delete. -->
+    <v-data-table-server
+      v-model="trash.selected"
+      class="mt-8"
+      :header-props="headerProps"
+      :headers="trashedHeaders"
+      :items="trash.items"
+      :items-length="trash.total"
+      :items-per-page="trash.itemsPerPage"
+      :loading="trash.loading"
+      :no-data-text="t('admin.users.trashedEmpty')"
+      :page="trash.page"
+      :row-props="rowProps"
+      show-select
+      @update:options="onTrashOptions"
+    >
+      <template #top>
+        <div class="bg-primary-darken-1 p-4 text-center">
+          <h2 class="text-xl tracking-wider">
+            {{ t("admin.users.trashedTitle") }}
+          </h2>
+
+          <p class="mt-2">
+            <span class="text-tertiary opacity-100">* </span>
+
+            <span class="opacity-80">{{
+              t("admin.users.trashedTitleNote")
+            }}</span>
+          </p>
+        </div>
+
+        <div v-if="trash.selected.length > 0" class="p-3">
+          <v-btn
+            block
+            color="tertiary"
+            :loading="bulkInFlight ? 'on-tertiary' : false"
+            prepend-icon="mdi-restore"
+            variant="elevated"
+            @click="bulkRestore"
+          >
+            {{ t("admin.users.restoreSelected", { count: trash.selected.length }) }}
+          </v-btn>
+        </div>
+      </template>
+
+      <template #item.avatar="{ item }">
+        <v-avatar class="my-1" rounded size="40">
+          <v-img
+            :alt="t('admin.users.avatar')"
+            cover
+            :src="item.avatar_thumb_url"
+          />
+        </v-avatar>
+      </template>
+
+      <template #item.role="{ item }">
+        {{ t(`admin.users.roles.${item.role}`) }}
+      </template>
+
+      <template #item.team="{ item }">
+        {{ item.team?.name ?? t("common.emptyValue") }}
+      </template>
+
+      <template #item.created_at="{ item }">
+        {{ formatDateTime(item.created_at) }}
+      </template>
+
+      <template #item.updated_at="{ item }">
+        {{ formatDateTime(item.updated_at) }}
+      </template>
+
+      <template #item.deleted_at="{ item }">
+        {{ item.deleted_at ? formatDateTime(item.deleted_at) : "" }}
+      </template>
+
+      <template #item.actions="{ item }">
+        <v-btn
+          color="tertiary"
+          icon="mdi-restore"
+          :loading="restoringId === item.id"
+          size="small"
+          :title="t('admin.users.restore')"
+          variant="text"
+          @click="restore(item)"
+        />
+      </template>
+    </v-data-table-server>
+
     <UserCreateDialog v-model="createOpen" @created="onCreated" />
 
     <UserEditDialog
@@ -388,7 +560,9 @@
       confirm-icon="mdi-delete"
       :confirm-label="t('common.delete')"
       :loading="bulkInFlight"
-      :message="t('admin.users.bulkDeleteConfirm', { count: selected.length })"
+      :message="
+        t('admin.users.bulkDeleteConfirm', { count: live.selected.length })
+      "
       @confirm="bulkDestroy"
     />
   </v-container>

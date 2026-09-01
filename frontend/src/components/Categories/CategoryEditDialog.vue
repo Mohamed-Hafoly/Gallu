@@ -105,7 +105,7 @@
           <v-text-field
             disabled
             :label="t('admin.categories.creator')"
-            :model-value="category.creator ?? t('common.emptyValue')"
+            :model-value="category.creator ?? t('common.deletedUser')"
           />
         </v-row>
 

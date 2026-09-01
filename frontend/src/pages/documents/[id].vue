@@ -150,7 +150,7 @@
 
         <div class="flex flex-row justify-between w-full">
           <p class="mt-1 text-sm opacity-70">
-            {{ document.creator }}
+            {{ document.creator ?? t("common.deletedUser") }}
           </p>
 
           <p class="mt-1 text-sm opacity-70">

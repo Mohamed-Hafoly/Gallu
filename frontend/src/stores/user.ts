@@ -9,6 +9,8 @@ export interface UserListParams {
   sort_by?: string;
   sort_order?: "asc" | "desc";
   search?: string;
+  /** Which side of the soft delete to serve. Absent means live only. */
+  trashed?: "with" | "only";
 }
 
 export interface UserPage {
@@ -105,10 +107,15 @@ export const useUserStore = defineStore("user", () => {
     return data.data as User;
   }
 
-  /** Permanent — users are not soft-deleted. */
+  /** Soft delete — the row moves to the pending-deletion table. */
   async function deleteUser(id: number) {
     await api.delete(`/api/users/${id}`);
   }
 
-  return { fetchUsers, createUser, updateUser, deleteUser };
+  async function restoreUser(id: number): Promise<User> {
+    const { data } = await api.post(`/api/users/${id}/restore`);
+    return data.data as User;
+  }
+
+  return { fetchUsers, createUser, updateUser, deleteUser, restoreUser };
 });

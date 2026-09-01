@@ -144,7 +144,9 @@
       sortable: true,
       maxWidth: 160,
       nowrap: true,
-      cellProps: ({ item }: { item: Document }) => ({ title: item.creator }),
+      cellProps: ({ item }: { item: Document }) => ({
+        title: item.creator ?? t("common.deletedUser"),
+      }),
     },
     // Sortable, even though `images_count` is not a column on `documents` - it
     // is withCount()'s select alias, which both MySQL and SQLite resolve in
@@ -451,6 +453,10 @@
         {{ item.description || t("common.emptyValue") }}
       </template>
 
+      <template #item.creator="{ item }">
+        {{ item.creator ?? t("common.deletedUser") }}
+      </template>
+
       <template #item.team="{ item }">
         {{ item.team?.name ?? t("common.emptyValue") }}
       </template>
@@ -560,6 +566,10 @@
       <!-- The team is loaded through withTrashed() here, so a document that
            went down with its team still names it — and the marker is what
            explains the disabled restore below. -->
+      <template #item.creator="{ item }">
+        {{ item.creator ?? t("common.deletedUser") }}
+      </template>
+
       <template #item.team="{ item }">
         <span v-if="!teamTrashed(item)">
           {{ item.team?.name ?? t("common.emptyValue") }}

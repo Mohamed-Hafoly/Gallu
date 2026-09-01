@@ -18,7 +18,10 @@ export interface Document {
   images_count: number;
   // Required, not optional: documents.user_id is NOT NULL, and DocumentResource
   // serves `creator` unconditionally rather than behind whenLoaded().
-  creator: string;
+  /** Null once the author is soft-deleted, and permanently if their row is ever
+   * force-deleted — documents.user_id is nullOnDelete. Rendered as
+   * common.deletedUser. The document itself belongs to the team and stays. */
+  creator: string | null;
   /**
    * Nullable the way User["team"] is: a document created before the team became
    * required belongs to none.

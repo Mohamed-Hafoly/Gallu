@@ -35,6 +35,7 @@ function makeUser(role: "super-admin" | "admin" | "member"): User {
     created_at: "2026-08-01T10:00:00Z",
     updated_at: "2026-08-15T10:00:00Z",
     is_super_admin: role === "super-admin",
+    deleted_at: null,
     role,
     team: role === "super-admin" ? null : { id: 1, name: "Design" },
   };

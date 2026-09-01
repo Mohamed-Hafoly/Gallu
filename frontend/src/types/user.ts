@@ -20,4 +20,6 @@ export interface User {
   /** The team this user belongs to. Null for a team-less user, and for one
    * whose team is soft-deleted. */
   team: { id: number; name: string } | null;
+  /** Set only on the pending-deletion table's rows; null on every live user. */
+  deleted_at: string | null;
 }

@@ -16,15 +16,23 @@ vi.mock("@/plugins/router", () => ({
   default: { replace: vi.fn() },
 }));
 
-const { fetchUsers, createUser, updateUser, deleteUser } = vi.hoisted(() => ({
-  fetchUsers: vi.fn(),
-  createUser: vi.fn(),
-  updateUser: vi.fn(),
-  deleteUser: vi.fn(),
-}));
+const { fetchUsers, createUser, updateUser, deleteUser, restoreUser } =
+  vi.hoisted(() => ({
+    fetchUsers: vi.fn(),
+    createUser: vi.fn(),
+    updateUser: vi.fn(),
+    deleteUser: vi.fn(),
+    restoreUser: vi.fn(),
+  }));
 
 vi.mock("@/stores/user", () => ({
-  useUserStore: () => ({ fetchUsers, createUser, updateUser, deleteUser }),
+  useUserStore: () => ({
+    fetchUsers,
+    createUser,
+    updateUser,
+    deleteUser,
+    restoreUser,
+  }),
 }));
 
 vi.mock("@/stores/team", () => ({
@@ -43,6 +51,7 @@ function user(id: number, overrides: Partial<User> = {}): User {
     created_at: "2026-08-01T10:00:00Z",
     updated_at: "2026-08-15T10:00:00Z",
     is_super_admin: false,
+    deleted_at: null,
     role: "member",
     team: { id: 1, name: "Design" },
     ...overrides,
@@ -57,8 +66,24 @@ async function mountPage() {
 
 type Wrapper = Awaited<ReturnType<typeof mountPage>>;
 
+/** The live listing: the first of the page's two tables. */
 function table(wrapper: Wrapper) {
   return wrapper.findComponent({ name: "VDataTableServer" });
+}
+
+/** The pending-deletion listing: the second. */
+function trashTable(wrapper: Wrapper) {
+  return wrapper.findAllComponents({ name: "VDataTableServer" })[1];
+}
+
+/**
+ * The two tables are told apart by the param, not by call order - they are
+ * fetched concurrently through loadBoth().
+ */
+function callsFor(trashed: "only" | undefined): UserListParams[] {
+  return fetchUsers.mock.calls
+    .map((call) => call[0] as UserListParams)
+    .filter((params) => params.trashed === trashed);
 }
 
 /** The listing is server-side, so this asserts the params the page sends. */
@@ -106,5 +131,94 @@ describe("team column", () => {
     await flushPromises();
 
     expect(lastParams()).toMatchObject({ sort_by: "team", sort_order: "asc" });
+  });
+});
+
+/**
+ * Users were hard-deleted until they joined the rest of the soft-deleted
+ * resources, so this whole area is new coverage - the page previously had none
+ * for delete at all.
+ */
+describe("pending deletion table", () => {
+  const binned = { deleted_at: "2026-09-01T10:00:00Z" };
+
+  function bothSides() {
+    fetchUsers.mockImplementation((params: UserListParams) =>
+      Promise.resolve(
+        params.trashed === "only"
+          ? { items: [user(2, binned)], total: 1 }
+          : { items: [user(1)], total: 1 },
+      ),
+    );
+  }
+
+  it("asks for both sides of the soft delete on mount", async () => {
+    bothSides();
+
+    await mountPage();
+
+    expect(callsFor(undefined)).toHaveLength(1);
+    expect(callsFor("only")).toHaveLength(1);
+  });
+
+  it("reports when each binned user was deleted", async () => {
+    bothSides();
+
+    const wrapper = await mountPage();
+    const keys = (
+      trashTable(wrapper).props("headers") as { key: string }[]
+    ).map((header) => header.key);
+
+    expect(keys).toContain("deleted_at");
+  });
+
+  it("pages the two tables independently", async () => {
+    bothSides();
+
+    const wrapper = await mountPage();
+
+    trashTable(wrapper).vm.$emit("update:options", {
+      page: 3,
+      itemsPerPage: 10,
+      sortBy: [],
+    });
+    await flushPromises();
+
+    expect(callsFor("only").at(-1)).toMatchObject({ page: 3 });
+    // The live side is untouched by the other table's paging.
+    expect(callsFor(undefined).at(-1)).toMatchObject({ page: 1 });
+  });
+
+  it("restores a user and refetches both tables", async () => {
+    bothSides();
+    restoreUser.mockResolvedValue(user(2));
+
+    const wrapper = await mountPage();
+    fetchUsers.mockClear();
+
+    await trashTable(wrapper).find(".mdi-restore").trigger("click");
+    await flushPromises();
+
+    expect(restoreUser).toHaveBeenCalledWith(2);
+    // A restore moves the row between the tables, so both are refetched.
+    expect(callsFor(undefined)).toHaveLength(1);
+    expect(callsFor("only")).toHaveLength(1);
+  });
+
+  it("soft deletes from the live table and refetches both", async () => {
+    bothSides();
+    deleteUser.mockResolvedValue(undefined);
+
+    const wrapper = await mountPage();
+    await table(wrapper).find(".mdi-delete").trigger("click");
+    await flushPromises();
+
+    fetchUsers.mockClear();
+    wrapper.findComponent({ name: "ConfirmDialog" }).vm.$emit("confirm");
+    await flushPromises();
+
+    expect(deleteUser).toHaveBeenCalledWith(1);
+    expect(callsFor(undefined)).toHaveLength(1);
+    expect(callsFor("only")).toHaveLength(1);
   });
 });

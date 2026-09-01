@@ -100,7 +100,7 @@
           <v-text-field
             disabled
             :label="t('admin.teams.creator')"
-            :model-value="team.creator ?? t('common.emptyValue')"
+            :model-value="team.creator ?? t('common.deletedUser')"
           />
         </v-row>
 

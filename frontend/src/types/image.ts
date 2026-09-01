@@ -17,7 +17,10 @@ export interface Image {
   user_id: number;
   // Required, not optional: images.user_id is NOT NULL, and ImageResource
   // serves `creator` unconditionally rather than behind whenLoaded().
-  creator: string;
+  /** Null once the author is soft-deleted, and permanently if their row is ever
+   * force-deleted — images.user_id is nullOnDelete. Rendered as
+   * common.deletedUser. The image itself belongs to the team and stays. */
+  creator: string | null;
   created_at: string;
   updated_at: string;
   /**

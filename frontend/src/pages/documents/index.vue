@@ -638,7 +638,7 @@
             </v-card-title>
 
             <v-card-subtitle class="ms-1">
-              {{ doc.creator }}
+              {{ doc.creator ?? t("common.deletedUser") }}
             </v-card-subtitle>
 
             <v-card-text class="pb-2 flex flex-col">

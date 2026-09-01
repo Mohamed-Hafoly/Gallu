@@ -307,7 +307,7 @@
       </template>
 
       <template #item.creator="{ item }">
-        {{ item.creator || t("common.emptyValue") }}
+        {{ item.creator || t("common.deletedUser") }}
       </template>
 
       <template #item.actions="{ item }">
@@ -388,7 +388,7 @@
       </template>
 
       <template #item.creator="{ item }">
-        {{ item.creator || t("common.emptyValue") }}
+        {{ item.creator || t("common.deletedUser") }}
       </template>
 
       <template #item.deleted_at="{ item }">

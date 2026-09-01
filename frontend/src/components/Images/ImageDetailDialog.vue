@@ -221,7 +221,7 @@
         <ReadOnlyField
           :editable="isEditing"
           :label="t('gallery.creator')"
-          :value="image.creator"
+          :value="image.creator ?? t('common.deletedUser')"
         />
 
         <CategoriesField
