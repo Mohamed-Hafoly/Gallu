@@ -38,12 +38,17 @@ export function useDocumentPermissions() {
    * ImageController::store is: it costs nothing and does not quietly start
    * lying if the listing's scope ever changes.
    *
-   * A document with no team is not editable here by anyone, super-admin
-   * included. This page never offers the team picker, so there would be no id
-   * to submit and team_id is required - the edit would 422 with an error the
-   * form has no field to fix. Those live under /admin/documents, which does
-   * offer the picker. Team-less documents are rare but real: teams are
-   * nullable, and nullOnDelete() empties the column when one is force-deleted.
+   * A document whose team reads null is not editable here by anyone,
+   * super-admin included. This page never offers the team picker, so there
+   * would be no id to submit and team_id is required - the edit would 422 with
+   * an error the form has no field to fix. Those live under /admin/documents,
+   * which does offer the picker.
+   *
+   * Null means *trashed*, never absent: documents.team_id is NOT NULL, and
+   * force-deleting a team takes its documents with it (cascadeOnDelete). What
+   * reaches here as null is a soft-deleted team on an endpoint that loaded the
+   * relation without withTrashed(). Such a document is waiting on its team's
+   * restore anyway, so refusing the edit is the right answer either way.
    */
   function canEdit(document: Document) {
     const user = authStore.user;

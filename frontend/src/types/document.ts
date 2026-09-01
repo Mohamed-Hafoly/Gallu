@@ -23,8 +23,10 @@ export interface Document {
    * common.deletedUser. The document itself belongs to the team and stays. */
   creator: string | null;
   /**
-   * Nullable the way User["team"] is: a document created before the team became
-   * required belongs to none.
+   * Null means the team is soft-deleted, never that there is none:
+   * documents.team_id is NOT NULL. DocumentResource reads the relation, which
+   * carries Team's soft-delete scope, so an endpoint that loaded it without
+   * withTrashed() serves null for a trashed team.
    *
    * The team is served through withTrashed() on the listings, so a document
    * that went down with its team still names it. `deleted_at` is what tells the

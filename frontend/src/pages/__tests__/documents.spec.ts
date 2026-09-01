@@ -371,9 +371,11 @@ describe("document affordances", () => {
     expect(editButtons(wrapper)).toHaveLength(0);
   });
 
+  // A null team means a *trashed* one - documents.team_id is NOT NULL - reaching
+  // the SPA from an endpoint that loaded the relation without withTrashed().
   // Nothing to lock the dialog to, and this page never offers the picker, so
   // the edit would 422 on a field the form does not render.
-  it("hides edit on a team less document, even for a super admin", async () => {
+  it("hides edit when the documents team is trashed, even for a super admin", async () => {
     const orphan = doc([], 0, { team: null });
     const wrapper = await mountIndex(orphan, makeUser("super-admin"));
 

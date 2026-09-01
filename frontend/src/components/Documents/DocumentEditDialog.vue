@@ -50,8 +50,9 @@
     (document_) => {
       form.title = document_.title;
       form.description = document_.description ?? "";
-      // Null only for a document created before the team became required; the
-      // team rule then keeps Save disabled until one is chosen.
+      // Null only when the team is soft-deleted and this payload did not widen
+      // the relation; the team rule then keeps Save disabled until one is
+      // chosen.
       form.teamId = document_.team?.id ?? null;
       original.title = form.title;
       original.description = form.description;

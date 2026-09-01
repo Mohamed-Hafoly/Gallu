@@ -457,6 +457,12 @@
         {{ item.creator ?? t("common.deletedUser") }}
       </template>
 
+      <!--
+        The fallback should never fire on this table: documents.team_id is NOT
+        NULL, and the listing loads the team withTrashed(), so even a binned one
+        arrives named. Kept as defence rather than a non-null assertion — a "-"
+        is a better failure than a blank cell or a template error.
+      -->
       <template #item.team="{ item }">
         {{ item.team?.name ?? t("common.emptyValue") }}
       </template>
