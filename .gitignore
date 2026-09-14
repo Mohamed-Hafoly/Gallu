@@ -12,8 +12,6 @@ vendor/
 .idea/
 .claude/
 .mcp.json
-CLAUDE.md
-AGENTS.md
 
 # Working files, not part of the application
 misc/

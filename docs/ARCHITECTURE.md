@@ -119,6 +119,25 @@ the content stays, and the UI renders a `[deleted]` creator. Their role assignme
 too, which is exactly what lets a restore return them to the same team with the same role, and
 their email stays reserved so a restore is always lossless.
 
+## Listings and paging
+
+Two strategies, deliberately not unified:
+
+- **Server-paginated** — the users table, the admin documents table, and a document's image
+  feed. Page, sort and search travel as query parameters; the response's `meta.total` feeds the
+  data table's footer, or `meta.total` / `meta.last_page` drive the feed's infinite scroll.
+  Sort keys are whitelisted against a `SORTABLE` constant on the controller, so an unknown
+  column is a 422 rather than an `orderBy` the caller chose.
+- **Client-filtered** — categories and teams. One `index` call returns every row, live and
+  trashed together, and the page filters in the browser.
+
+The split is about expected row count, not house style: a few dozen teams never need paging,
+while users and documents grow without bound. Copy whichever fits what a table will hold.
+
+The query string is the source of truth for the server-paginated screens — the chip, the term
+and the sort all live there — so a reload or a shared link restores the same view, and every
+refetch funnels through one place rather than each control fetching for itself.
+
 ## Search
 
 All three searchable models go through Laravel Scout on the `database` engine — no index, no
@@ -166,6 +185,30 @@ Truncation is bidi-correct globally rather than per component: one stylesheet ru
 direction per string on every truncating surface, because otherwise a Latin value inside an
 Arabic UI is clipped at its start.
 
+## The SPA
+
+Routing is file-based over `src/pages/`, so the file tree *is* the route table and there is no
+route array to keep in sync. Two consequences worth knowing: the documents listing lives at
+`src/pages/index.vue` because it is the home page, and `/documents` survives only as a redirect
+declared alongside the generated routes; and `(auth)/` is a pathless group, so login and
+register sit at the root rather than under `/auth`.
+
+The navigation drawer has two modes rather than two components. One composable returns either
+the main links or the admin links depending on whether the path starts with `/admin`, and the
+drawer renders whichever it is handed. Items are added by editing those arrays, not the markup.
+Each entry's `value` must equal its real path, because the list matches `value` against the
+current route to decide what is active — a mismatch silently kills the highlight rather than
+erroring.
+
+Components and Vuetify's own components are auto-imported, and the generated declaration files
+(`components.d.ts`, `typed-router.d.ts`) are build output that happens to be committed: never
+hand-edit them. Vuetify and Tailwind are both active, with Tailwind used for spacing and
+typography tweaks alongside Vuetify props and theme colour tokens.
+
+Validation rules are duplicated on purpose, split by domain: each `use*ValidationRules.ts`
+composable mirrors a `*ValidationRules.php` class, so a form can reject input before a round
+trip while the API remains the only authority. They are changed together.
+
 ## Testing
 
 Pest feature tests run on MySQL — the same engine as production. The suite moved off SQLite
@@ -177,7 +220,16 @@ test just inserted while a `LIKE` on the same row finds it, and negative asserti
 wrong reason. Full-text tests therefore use `DatabaseMigrations` and are kept few, since each
 costs a fresh migration.
 
-The frontend suite is Vitest on jsdom, configured inside the Vite config so tests inherit the
-app's plugins and aliases. Specs live beside the code they cover. The router guard is tested as
-an exported function rather than by driving a real navigation, so tests do not lazy-load every
-page component.
+The frontend suite is Vitest on jsdom, configured inside the Vite config rather than a config
+of its own, so tests inherit the app's plugins and the `@` alias for free. Only
+`src/**/__tests__/**/*.spec.ts` is collected — a spec anywhere else is silently ignored — and
+specs live beside the code they cover.
+
+Two setup details are load-bearing. `ResizeObserver` and `matchMedia` are shimmed, because jsdom
+provides neither and Vuetify's layout and display code needs both; anything mounting a Vuetify
+component depends on that. And Vuetify is inlined in the test server deps, because its
+components import CSS directly and Node cannot handle that natively — any new dependency
+shipping raw CSS imports needs the same treatment.
+
+The router guard is tested as an exported function rather than by driving a real navigation, so
+tests do not lazy-load every page component.
