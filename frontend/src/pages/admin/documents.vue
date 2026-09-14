@@ -551,7 +551,7 @@
           <v-btn
             block
             color="tertiary"
-            :loading="bulkInFlight"
+            :loading="bulkInFlight ? 'on-tertiary' : false"
             prepend-icon="mdi-restore"
             variant="elevated"
             @click="bulkRestore"
