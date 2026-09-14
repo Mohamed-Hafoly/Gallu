@@ -24,14 +24,11 @@ to exactly one team — and a global super-admin has no team it could honestly b
 a "system team" id instead makes it a real row, one that shows up in team pickers and can be
 renamed or deleted by the screen meant to guard it.
 
-Authorization is then a single `Gate::before` that grants a super-admin every ability. It returns
-`true` or `null` and **never `false`** — `false` there would deny every check in the app rather
-than just the one. So `UserPolicy` and `TeamPolicy` have methods that all return `false`: not
-stubs, but the point, since the gate already short-circuited for the only role allowed through.
-
-The corollary: a rule that must bind super-admins *too* cannot live in a policy at all. "You may
-not delete your own account" and "you may not demote yourself" are explicit controller guards —
-the one place the gate cannot skip.
+A single `Gate::before` grants a super-admin every ability, returning `true` or `null` and
+**never `false`** — `false` would deny every check in the app rather than one. Which is why the
+policy methods all return `false`: not stubs, but the point. Rules that must bind super-admins
+*too* — you may not delete or demote yourself — are controller guards, the one place the gate
+cannot skip.
 
 ![Editing a user](docs/screenshots/user-dialog.png)
 
@@ -42,17 +39,11 @@ paths ship in the JS bundle and any guard runs in the visitor's browser. The pol
 
 ## Teams: membership *is* the role assignment
 
-There is no `team_id` column on `users` and no `team_user` pivot — either would be a second source
-of truth about where someone belongs. One method writes membership, and it clears existing
-assignments first, which is what enforces one team per user; the underlying package would happily
-hold one assignment per team. Adding someone who already belongs elsewhere is therefore a *move*,
-and the members dialog says so before you commit to it. Passing no team removes them from every
-team, which is what promoting someone to super-admin does.
-
-The ambient team is set per request by middleware registered *inside* the authenticated route
-group — a global prepend runs before the session starts and leaves the user null on every request.
-A team-less user gets `null` rather than a sentinel id, so an unscoped write fails loudly against
-the `NOT NULL` column instead of silently writing an orphan.
+There is no `team_id` column on `users` and no `team_user` pivot, because either would be a second
+source of truth about where someone belongs. One method writes membership, and it clears any
+existing assignment first, which is what enforces one team per user: adding someone who already
+belongs elsewhere is a *move*, and the dialog says so before you commit to it. Clearing it entirely
+is what promoting someone to super-admin does.
 
 ![Teams administration](docs/screenshots/admin-teams.png)
 
@@ -99,13 +90,6 @@ cascade and a manual delete alike. `PruneTrashedTest` caught it; reading the cod
 Users, documents and images go through Laravel Scout on its database engine — no index, no queue,
 no re-indexing. Descriptions use a real FULLTEXT index; titles keep a `LIKE` so partial-title
 search still works.
-
-Related columns — a creator's name, a team's name — are reached through an **aliased join**, never
-through Scout's engine callback. That callback appends at the *top level*, beside the engine's `OR`
-group, and `AND` binds tighter than `OR`. The day users became soft-deletable, the constraint bound
-to the last branch only: binned users reappeared in the live listing as soon as you searched their
-name, and the trash listing returned every live user whose email matched. Found by poking at the
-running app, not by the suite — two regression tests pin it now.
 
 → [Scout, full-text and the tie-break trap](docs/ARCHITECTURE.md#search)
 
