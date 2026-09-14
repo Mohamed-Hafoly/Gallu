@@ -1,7 +1,7 @@
 import type * as AutoRoutes from "vue-router/auto-routes";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { authGuard } from "@/plugins/router";
+import router, { authGuard } from "@/plugins/router";
 import { useAuthStore } from "@/stores/auth";
 
 // The guard only reads `authStore.user`, but importing the store pulls in axios
@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 describe("signed-out visitors", () => {
-  it.each(["documents", "profile", "settings", "home"])(
+  it.each(["profile", "home"])(
     "are redirected from %s to login",
     (name) => {
       expect(guard(name)).toEqual({ name: "login" });
@@ -49,7 +49,7 @@ describe("signed-in visitors", () => {
     expect(guard(name)).toEqual({ name: "home" });
   });
 
-  it.each(["documents", "profile", "settings", "home"])(
+  it.each(["profile", "home"])(
     "may reach the protected route %s",
     (name) => {
       expect(guard(name)).toBeUndefined();
@@ -131,5 +131,22 @@ describe("the admin section", () => {
     useAuthStore().user = superAdmin as never;
 
     expect(guard("admin-users", "/admin")).toBeUndefined();
+  });
+});
+
+// The documents listing became the home page, so its old path is now a
+// redirect. Resolving is enough to assert it: unlike a real navigation, it
+// never loads the target component - and resolve() does not *follow* a
+// redirect either, so the assertion is on the matched record's own redirect
+// rather than on the resolved name, which is undefined for a redirect record.
+describe("the old documents path", () => {
+  it("redirects to home", () => {
+    expect(router.resolve("/documents").matched[0]?.redirect).toEqual({
+      name: "home",
+    });
+  });
+
+  it("leaves a document's own page alone", () => {
+    expect(router.resolve("/documents/8").params).toEqual({ id: "8" });
   });
 });

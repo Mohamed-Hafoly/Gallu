@@ -5,7 +5,7 @@ import { flushPromises } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { reactive } from "vue";
 import { mountWithPlugins } from "@/__tests__/helpers/mountWithPlugins";
-import DocumentsIndex from "@/pages/documents/index.vue";
+import DocumentsIndex from "@/pages/index.vue";
 import i18n from "@/plugins/i18n";
 import { useNotifierStore } from "@/stores/notifier";
 

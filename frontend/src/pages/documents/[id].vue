@@ -57,7 +57,7 @@
       notifier.notify(t("admin.documents.deleted"));
       // replace, not push: this page's document no longer exists, so leaving it
       // in history would put a 403 one Back press away.
-      router.replace({ name: "documents" });
+      router.replace({ name: "home" });
     } catch {
       notifier.notify(t("admin.documents.deleteFailed"), "error");
       deleteOpen.value = false;
@@ -101,10 +101,10 @@
             exact
             :prepend-icon="isRtl ? 'mdi-arrow-right' : 'mdi-arrow-left'"
             size="small"
-            :to="{ name: 'documents' }"
+            :to="{ name: 'home' }"
             variant="flat"
           >
-            {{ t("documents.backToDocuments") }}
+            {{ t("nav.home") }}
           </v-btn>
 
           <!--

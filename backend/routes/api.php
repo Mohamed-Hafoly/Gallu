@@ -70,6 +70,5 @@ Route::middleware(['auth:sanctum', SetPermissionsTeam::class])->group(function (
 
     Route::get('/gallery', fn () => 'hellp');
     Route::get('/profile', fn () => 'hellp');
-    Route::get('/settings', fn () => 'hellp');
     Route::get('/', fn () => 'hellp');
 });

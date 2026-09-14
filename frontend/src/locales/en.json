@@ -17,9 +17,7 @@
   "nav": {
     "home": "Home",
     "profile": "Profile",
-    "settings": "Settings",
     "admin": "Admin",
-    "backToDocuments": "Back to documents",
     "categories": "Categories",
     "teams": "Teams",
     "users": "Users",
@@ -254,7 +252,6 @@
     "title": "Documents",
     "empty": "No documents yet.",
     "imageCount": "no images | 1 image | {count} images",
-    "backToDocuments": "All documents",
     "forbidden": "You do not have access to this document.",
     "allImages": "All",
     "yourImages": "Yours",

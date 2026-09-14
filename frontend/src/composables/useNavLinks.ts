@@ -9,6 +9,9 @@ export function useNavLinks() {
   const authStore = useAuthStore();
 
   const mainLinks = computed(() => [
+    // Home *is* the documents list - the listing lives at "/" rather than
+    // behind its own path, so a second entry pointing at the same page would be
+    // a duplicate rather than a shortcut.
     {
       title: t("nav.home"),
       value: "/",
@@ -17,16 +20,6 @@ export function useNavLinks() {
         prependIcon: "mdi-home",
         class: "tracking-wider",
       },
-    },
-    {
-      title: t("nav.documents"),
-      value: "/documents",
-      props: { to: { name: "documents" }, prependIcon: "mdi-folder-multiple" },
-    },
-    {
-      title: t("nav.settings"),
-      value: "/settings",
-      props: { to: { name: "settings" }, prependIcon: "mdi-cog" },
     },
     // Hidden from everyone but super-admins. Cosmetic only — route paths ship
     // in the bundle either way; the backend policies are the real enforcement.
@@ -46,9 +39,9 @@ export function useNavLinks() {
 
   const adminLinks = computed(() => [
     {
-      title: t("nav.backToDocuments"),
-      value: "/documents",
-      props: { to: { name: "documents" }, prependIcon: "mdi-arrow-left" },
+      title: t("nav.home"),
+      value: "/",
+      props: { to: { name: "home" }, prependIcon: "mdi-home" },
     },
     {
       title: t("nav.users"),

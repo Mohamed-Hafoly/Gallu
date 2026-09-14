@@ -25,7 +25,6 @@ declare module 'vue' {
     DocumentEditDialog: typeof import('./src/components/Documents/DocumentEditDialog.vue')['default']
     DocumentFields: typeof import('./src/components/Documents/DocumentFields.vue')['default']
     FormDialog: typeof import('./src/components/FormDialog.vue')['default']
-    HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     ImageCreateDialog: typeof import('./src/components/Images/ImageCreateDialog.vue')['default']
     ImageDetailDialog: typeof import('./src/components/Images/ImageDetailDialog.vue')['default']
     ImageDialog: typeof import('./src/components/Images/ImageDialog.vue')['default']

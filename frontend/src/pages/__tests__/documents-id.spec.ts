@@ -309,7 +309,7 @@ describe("delete confirmation", () => {
     expect(deleteDocument).toHaveBeenCalledWith(1);
     expect(notifier.notify).toHaveBeenCalledWith("Document deleted");
     // replace, not push: the document is gone, so Back must not return to it.
-    expect(replace).toHaveBeenCalledWith({ name: "documents" });
+    expect(replace).toHaveBeenCalledWith({ name: "home" });
   });
 
   it("stays put and reports a failed delete", async () => {

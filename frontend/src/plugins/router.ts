@@ -12,7 +12,13 @@ import { useAuthStore } from "@/stores/auth";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [...routes],
+  routes: [
+    ...routes,
+    // The documents listing moved to "/" when it became the home page. Links
+    // and bookmarks to its old path still resolve rather than landing on the
+    // 404 page; /documents/:id is a real route and is unaffected.
+    { path: "/documents", redirect: { name: "home" } },
+  ],
 });
 if (import.meta.hot) {
   handleHotUpdate(router);
