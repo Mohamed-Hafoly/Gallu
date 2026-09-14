@@ -17,6 +17,7 @@ AGENTS.md
 
 # Working files, not part of the application
 misc/
+seed-images/
 req.txt
 default-avatar.jpg
 
