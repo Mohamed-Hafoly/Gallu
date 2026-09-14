@@ -1,0 +1,487 @@
+<?php
+
+namespace App\Models;
+
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\RoleName;
+use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Prunable;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Laravel\Scout\Builder as ScoutBuilder;
+use Laravel\Scout\Searchable;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
+use Spatie\Permission\PermissionRegistrar;
+use Spatie\Permission\Support\Config;
+use Spatie\Permission\Traits\HasRoles;
+
+class User extends Authenticatable implements HasMedia
+{
+    /** @use HasFactory<UserFactory> */
+    use HasFactory, HasRoles, InteractsWithMedia, Notifiable, Prunable, Searchable, SoftDeletes;
+
+    /**
+     * There is deliberately no booted() cascade here, unlike Team and Document.
+     *
+     * Those two cascade because they are containers: an image cannot outlive the
+     * document that gives it a place in the hierarchy, and a document cannot
+     * outlive its team. A user is not a container for the content they authored
+     * - the team is, which is what both scopeVisibleTo() methods scope by - so
+     * binning a member must not bin the documents and images their team still
+     * works with. The authorship goes, the content stays.
+     *
+     * What follows from the trait alone is most of the behaviour: every
+     * belongsTo(User) now carries the global scope, so $document->user and
+     * $image->user read null for a binned author and the resources render that
+     * as "[deleted]"; Team::members() is a morphedByMany onto this model, so a
+     * binned user leaves member lists and members_count without any filter of
+     * its own; and EloquentUserProvider::retrieveById() applies global scopes,
+     * so they cannot log in and an open session stops resolving.
+     *
+     * The model_has_roles row is untouched by any of that, which is what lets a
+     * restore put them back in the same team with the same role.
+     */
+
+    /**
+     * Alias for the join that puts the team's name inside Scout's search group.
+     * Shared with toSearchableArray() so the two cannot drift.
+     */
+    public const SEARCH_TEAM = 'search_team';
+
+    /**
+     * The media collection holding the user's profile image.
+     */
+    public const AVATAR_COLLECTION = 'avatar';
+
+    /**
+     * Served straight out of `public/`, not the media disk, because it is a
+     * fallback rather than an upload — see registerMediaCollections().
+     */
+    public const DEFAULT_AVATAR_PATH = 'images/default-avatar.jpg';
+
+    /**
+     * How long a binned user is kept before they are destroyed for good.
+     */
+    public const RETENTION_DAYS = 30;
+
+    /**
+     * Memo for teamAssignment(), which UserResource hits for every listed row.
+     *
+     * @var array{team_id?: int, team_name?: string, role?: RoleName}|null
+     */
+    protected ?array $teamAssignment = null;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var list<string>
+     */
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+    ];
+
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var list<string>
+     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+            'is_super_admin' => 'boolean',
+        ];
+    }
+
+    /**
+     * The columns Scout searches, LIKEd with a wildcard on either side by the
+     * `database` engine.
+     *
+     * Only real `users` columns belong here: the engine qualifies every key
+     * onto the model's own table, so a key naming anything else resolves to a
+     * column that does not exist. That is why the team name is missing - it
+     * lives behind `model_has_roles`, and rides into the same OR group through
+     * the engine callback in UserController::index(). See
+     * scopeOrWhereTeamNameLike().
+     *
+     * `id` is listed so the admin can jump straight to a row by the number the
+     * table shows. The engine treats it specially rather than LIKEing it: when
+     * the whole term is digits it matches the key by *equality* and drops the
+     * LIKE for this column, so "145" finds user 145 and not user 1450. A term
+     * that is not all digits leaves the id clause a LIKE that matches nothing,
+     * which is the intended no-op.
+     *
+     * The values are unused by the `database` engine, which reads only the
+     * keys and queries the table directly - there is no index to import or
+     * keep in sync, and nothing to re-index when a team is renamed or binned.
+     *
+     * @return array<string, mixed>
+     */
+    public function toSearchableArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'email' => $this->email,
+            self::SEARCH_TEAM.'.name' => null,
+        ];
+    }
+
+    /**
+     * The query Scout's database engine builds its search on.
+     *
+     * The team name lives behind model_has_roles rather than on `users`, and it
+     * has to be searchable *inside* the engine's OR group rather than beside it.
+     * It used to ride in through search()'s callback, which appends at the top
+     * level - and that quietly broke the moment users became soft-deletable:
+     * constrainForSoftDeletes() adds its deleted_at test at the top level too,
+     * so the query read
+     *
+     *     WHERE (name LIKE ? OR email LIKE ?) OR EXISTS(team ...) AND deleted_at IS NULL
+     *
+     * and AND binds tighter than OR - the soft-delete test covered only the last
+     * branch. A binned user surfaced in the live listing as soon as their name
+     * was searched, and `trashed=only` returned every live user whose email
+     * matched. Neither is caught by scopeVisibleTo()-style scope nesting:
+     * withoutTrashed() and onlyTrashed() are Builder macros, not local scopes,
+     * so callScope() never wraps anything for them.
+     *
+     * Joining here puts the team name in the same group as name and email, so
+     * whatever the engine ANDs on afterwards applies to all of it. Document and
+     * Image do the same thing for the same reason.
+     *
+     * A grouped derived table rather than a plain join onto the pivot: nothing
+     * at the database level stops a user holding two role rows - the composite
+     * key is (team_id, role_id, model_id, model_type), and only
+     * User::assignToTeam() enforces one - so a direct join could duplicate a
+     * row in the listing. Trashed teams are excluded, exactly as
+     * teamAssignmentQuery() does everywhere else, so a binned team reads as no
+     * team here too.
+     */
+    public function newScoutQuery(ScoutBuilder $builder): Builder
+    {
+        // Nothing to search means nothing to join.
+        if (blank($builder->query)) {
+            return static::query();
+        }
+
+        $morphKey = self::pivotColumn(Config::morphKey());
+
+        return static::query()
+            // Required once anything is joined, or the joined columns collide
+            // with the model's own as the row is hydrated.
+            ->select($this->getTable().'.*')
+            ->leftJoinSub(
+                self::teamAssignmentQuery()
+                    ->where(self::pivotColumn('model_type'), $this->getMorphClass())
+                    ->select($morphKey.' as model_id', DB::raw('min(teams.name) as name'))
+                    ->groupBy($morphKey),
+                self::SEARCH_TEAM,
+                self::SEARCH_TEAM.'.model_id', '=', $this->getTable().'.'.$this->getKeyName(),
+            );
+    }
+
+    /**
+     * Drop the membership row on a force delete, and nothing else.
+     *
+     * Deliberately all this does. The docblock at the top of this class spells
+     * out why a soft delete does not cascade, and the same holds one step
+     * further on: documents.user_id and images.user_id are nullOnDelete, so
+     * destroying the row costs the team its *authorship* and nothing more. The
+     * gallery must not empty because a member left, which is exactly what
+     * documents.team_id being a cascade and user_id not being one says. The
+     * avatar goes on its own — forceDelete() on a HasMedia model takes the
+     * file, its conversions and the media row with it.
+     *
+     * The role row would otherwise outlive them: model_has_roles carries a
+     * foreign key on role_id only, so nothing at the database level removes a
+     * row keyed by model_id. assignToTeam(null) is the only writer of
+     * membership in this app, so it clears it here too rather than a second
+     * delete written out by hand — and it must not run on a *soft* delete,
+     * where that surviving row is what lets a restore return them to the same
+     * team with the same role.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (User $user): void {
+            if (! $user->isForceDeleting()) {
+                return;
+            }
+
+            $user->assignToTeam(null);
+        });
+    }
+
+    /**
+     * The rows `model:prune` may destroy on this run.
+     *
+     * Unconditional: nothing contains a user, so unlike Document and Image
+     * there is no parent bin to wait inside.
+     *
+     * @return Builder<static>
+     */
+    public function prunable(): Builder
+    {
+        return static::where('deleted_at', '<=', now()->subDays(self::RETENTION_DAYS));
+    }
+
+    public function images(): HasMany
+    {
+        return $this->hasMany(Image::class);
+    }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(Document::class);
+    }
+
+    /**
+     * The role this user is presented as: the global flag first, then their
+     * role within their team, falling back to Member for a team-less user.
+     */
+    public function role(): RoleName
+    {
+        if ($this->is_super_admin) {
+            return RoleName::SuperAdmin;
+        }
+
+        return $this->teamAssignment()['role'] ?? RoleName::Member;
+    }
+
+    /**
+     * This user's single team membership, or an empty array when they belong to
+     * none.
+     *
+     * Queries `model_has_roles` directly rather than going through the `roles`
+     * relation, which spatie filters by the ambient `getPermissionsTeamId()` —
+     * that would answer "what is this user's role *in the current context*",
+     * when the question here is "which team are they in at all". Same reasoning
+     * as the super-admin predicate that preceded the `is_super_admin` column.
+     *
+     * Trashed teams are excluded, so a soft-deleted team reads as no membership
+     * until it is restored.
+     *
+     * The name rides along so UserResource never has to load a Team per row;
+     * scopeWithTeamAssignment() pre-selects all three on a listing.
+     *
+     * @return array{team_id?: int, team_name?: string, role?: RoleName}
+     */
+    public function teamAssignment(): array
+    {
+        if ($this->teamAssignment !== null) {
+            return $this->teamAssignment;
+        }
+
+        // Populated by scopeWithTeamAssignment() on listings, so rendering a
+        // page of users costs no query per row.
+        if (array_key_exists('team_assignment_id', $this->attributes)) {
+            return $this->teamAssignment = $this->attributes['team_assignment_id'] === null ? [] : [
+                'team_id' => (int) $this->attributes['team_assignment_id'],
+                'team_name' => (string) $this->attributes['team_assignment_name'],
+                'role' => RoleName::from($this->attributes['team_assignment_role']),
+            ];
+        }
+
+        $row = static::teamAssignmentQuery()
+            ->where(self::pivotColumn(Config::morphKey()), $this->getKey())
+            ->where(self::pivotColumn('model_type'), $this->getMorphClass())
+            ->select('teams.id', 'teams.name', 'roles.name as role_name')
+            ->first();
+
+        return $this->teamAssignment = $row === null ? [] : [
+            'team_id' => (int) $row->id,
+            'team_name' => (string) $row->name,
+            'role' => RoleName::from($row->role_name),
+        ];
+    }
+
+    /**
+     * The team this user belongs to, or null.
+     *
+     * Convenience over teamAssignment(), which already carries the id and name —
+     * so UserResource deliberately does *not* use this, as hydrating a Team per
+     * row would be a query per row on the listing.
+     */
+    public function team(): ?Team
+    {
+        $teamId = $this->teamAssignment()['team_id'] ?? null;
+
+        return $teamId === null ? null : Team::find($teamId);
+    }
+
+    /**
+     * Select the membership alongside the rows, so a listing costs no query per
+     * user. Read back by teamAssignment().
+     */
+    public function scopeWithTeamAssignment(Builder $query): void
+    {
+        $select = fn (string $column) => fn (QueryBuilder $sub) => $this
+            ->correlatedTeamAssignment($sub)
+            ->select($column)
+            ->limit(1);
+
+        $query->select($this->getTable().'.*')->addSelect([
+            'team_assignment_id' => $select('teams.id'),
+            'team_assignment_name' => $select('teams.name'),
+            'team_assignment_role' => $select('roles.name'),
+        ]);
+    }
+
+    /**
+     * teamAssignmentQuery(), tied to the row of `users` being read.
+     *
+     * Shared by the listing's select and by the search above so the two cannot
+     * drift - the same reason teamAssignmentQuery() itself exists.
+     */
+    protected function correlatedTeamAssignment(QueryBuilder $sub): QueryBuilder
+    {
+        return self::teamAssignmentQuery($sub)
+            ->whereColumn(self::pivotColumn(Config::morphKey()), $this->getTable().'.'.$this->getKeyName())
+            ->where(self::pivotColumn('model_type'), $this->getMorphClass());
+    }
+
+    /**
+     * The one definition of "which live team is this user assigned to", shared
+     * by the per-model lookup and the listing scope so they cannot drift.
+     */
+    protected static function teamAssignmentQuery(?QueryBuilder $query = null): QueryBuilder
+    {
+        $pivot = Config::modelHasRolesTable();
+        $roles = Config::rolesTable();
+
+        return ($query ?? DB::query())
+            ->from($pivot)
+            ->join($roles, $roles.'.id', '=', self::pivotColumn(app(PermissionRegistrar::class)->pivotRole))
+            ->join('teams', 'teams.id', '=', self::pivotColumn(Config::teamForeignKey()))
+            ->whereNull('teams.deleted_at');
+    }
+
+    /**
+     * Qualify a column on the role pivot, whose names are all configurable.
+     */
+    protected static function pivotColumn(string $column): string
+    {
+        return Config::modelHasRolesTable().'.'.$column;
+    }
+
+    /**
+     * Put this user in a team with the given role, or remove them from any team
+     * when `$team` is null. The only writer of membership.
+     *
+     * Existing rows are cleared first, which is what enforces one team per user
+     * — spatie itself would happily hold an assignment per team.
+     */
+    public function assignToTeam(?Team $team, RoleName $role = RoleName::Member): void
+    {
+        $columns = config('permission.column_names');
+
+        DB::table(config('permission.table_names')['model_has_roles'])
+            ->where($columns['model_morph_key'], $this->getKey())
+            ->where('model_type', $this->getMorphClass())
+            ->delete();
+
+        $this->teamAssignment = null;
+
+        if ($team === null) {
+            $this->unsetRelation('roles');
+
+            return;
+        }
+
+        $previousTeamId = getPermissionsTeamId();
+        setPermissionsTeamId($team->getKey());
+
+        // Spatie caches roles per team context, so the relation has to be
+        // dropped around the switch or a stale one answers for the wrong team.
+        $this->unsetRelation('roles');
+        $this->assignRole($role);
+
+        setPermissionsTeamId($previousTeamId);
+        $this->unsetRelation('roles');
+    }
+
+    /**
+     * A user without an uploaded avatar falls back to the shipped default
+     * image, so getFirstMediaUrl() never returns an empty string and the SPA
+     * needs no placeholder of its own. Registered for the conversion too,
+     * otherwise the thumb URL would come back empty.
+     */
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection(self::AVATAR_COLLECTION)
+            ->singleFile()
+            ->acceptsMimeTypes(Image::ACCEPTED_MIME_TYPES)
+            ->useFallbackUrl(asset(self::DEFAULT_AVATAR_PATH))
+            ->useFallbackUrl(asset(self::DEFAULT_AVATAR_PATH), 'thumb');
+    }
+
+    public function registerMediaConversions(?Media $media = null): void
+    {
+        $this->addMediaConversion('thumb')
+            ->width(200)
+            ->height(200)
+            ->nonQueued();
+    }
+
+    /**
+     * Store an uploaded file as this user's avatar.
+     *
+     * The collection is `singleFile()`, so this replaces any existing avatar
+     * without an explicit clear. Shared by registration and profile updates.
+     */
+    public function setAvatarFromFile(UploadedFile $file): void
+    {
+        $this->addMedia($file)
+            ->usingName($this->name)
+            ->usingFileName(Str::uuid().'.'.$file->getClientOriginalExtension())
+            ->toMediaCollection(self::AVATAR_COLLECTION);
+    }
+
+    /**
+     * Apply the avatar half of a multipart form submission, if it asked for one.
+     *
+     * Clearing the collection is enough to "remove" an avatar — the collection
+     * falls back to the default image. Shared by the Fortify profile action and
+     * the admin user endpoint so both agree on what `remove_avatar` means; the
+     * flag arrives over multipart as the string "1", hence filter_var.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    public function applyAvatarInput(array $input): void
+    {
+        if (filter_var($input['remove_avatar'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            $this->clearMediaCollection(self::AVATAR_COLLECTION);
+
+            return;
+        }
+
+        if (! isset($input['avatar'])) {
+            return;
+        }
+
+        $this->setAvatarFromFile($input['avatar']);
+    }
+}

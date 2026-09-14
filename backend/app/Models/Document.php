@@ -1,0 +1,333 @@
+<?php
+
+namespace App\Models;
+
+use Database\Factories\DocumentFactory;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Prunable;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Laravel\Scout\Attributes\SearchUsingFullText;
+use Laravel\Scout\Builder as ScoutBuilder;
+use Laravel\Scout\Searchable;
+
+/**
+ * A titled group of existing images.
+ *
+ * Deliberately not a HasMedia model: a document owns no file of its own, it
+ * references Image records that already carry their own upload, categories and
+ * creator. A spatie media collection could not express this — collection_name
+ * is a flat string scoped to one owning model, so collections cannot nest, be
+ * shared between documents, or carry a title of their own.
+ */
+class Document extends Model
+{
+    /** @use HasFactory<DocumentFactory> */
+    use HasFactory, Prunable, Searchable, SoftDeletes;
+
+    /**
+     * Alias for the join onto `users` that puts the creator's name inside
+     * Scout's search group. Shared with toSearchableArray() so the two cannot
+     * drift.
+     */
+    public const SEARCH_CREATOR = 'search_creator';
+
+    /**
+     * Alias for the join onto `teams`, as above.
+     */
+    public const SEARCH_TEAM = 'search_team';
+
+    /**
+     * How long a binned document is kept before it is destroyed for good.
+     */
+    public const RETENTION_DAYS = 7;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var list<string>
+     */
+    protected $fillable = [
+        'user_id',
+        'team_id',
+        'title',
+        'description',
+    ];
+
+    /**
+     * Keep a document's images in step with its own trashed state.
+     *
+     * They live here rather than in DocumentController because the invariant —
+     * an image cannot outlive the document that gives it a place in the
+     * hierarchy, which is what the images.document_id migration says — has to
+     * hold for the bulk delete, for tinker, and for anything added later, not
+     * just for one controller action. Team::booted() is the same pair one level
+     * up, and reaches these through delete() and restore().
+     */
+    protected static function booted(): void
+    {
+        // A force delete is the one case the database gets wrong, and it gets
+        // it wrong quietly. images.document_id is ON DELETE CASCADE, so the
+        // rows do go — but in SQL, firing no model events, so spatie's deleting
+        // hook never runs and every file, thumb conversion and `media` row is
+        // orphaned on disk with nothing left that could ever collect it: the
+        // media table carries no foreign key of its own.
+        //
+        // On `deleting` rather than in Prunable's pruning(), which only fires
+        // when model:prune reaches *this* model. Team's own force-delete hook
+        // deletes its documents directly, and so slipped straight past it —
+        // measured, not guessed, by PruneTrashedTest's "removes the files of a
+        // teams images when it prunes". Here it holds for the prune, for the
+        // team's cascade, and for tinker alike.
+        //
+        // withTrashed() and no window of its own: an image inside a document
+        // being destroyed dies with it whatever its own deleted_at says.
+        //
+        // get() first rather than Builder::each(), which chunks by offset — and
+        // every delete shifts the rows still to come out from under it.
+        static::deleting(function (Document $document): void {
+            if (! $document->isForceDeleting()) {
+                return;
+            }
+
+            $document->images()->withTrashed()->get()
+                ->each(fn (Image $image) => $image->forceDelete());
+        });
+
+        // `deleted`, not `deleting`: deleted_at is not stamped until after the
+        // save, and the cascade copies it so the two agree.
+        static::deleted(function (Document $document): void {
+            // A hard delete is the database's job — images.document_id is
+            // ON DELETE CASCADE. Repeating it here would be a second, slower
+            // truth, and it would miss rows that are already soft-deleted.
+            if ($document->isForceDeleting()) {
+                return;
+            }
+
+            // The relation carries Image's own soft-delete scope, so this only
+            // touches live images. An image already in the bin keeps the
+            // deleted_at it has, which is all this needs to do: the restore
+            // below takes everything back regardless of how it got there.
+            $document->images()->update(['deleted_at' => $document->deleted_at]);
+        });
+
+        // `restoring`, not `restored`, so a failure aborts the whole restore
+        // rather than leaving the document back and its images behind.
+        static::restoring(function (Document $document): void {
+            // Every image in this document's bin, not only the ones its own
+            // delete put there. Restoring a document restores the document
+            // *whole*: an image binned separately beforehand comes back with
+            // it, and can be deleted again by hand if that was not wanted.
+            //
+            // This is what retired images.trashed_with_document, whose only
+            // purpose was telling the two apart.
+            //
+            // A raw update rather than restore() per image: one statement, and
+            // it fires no Image events.
+            $document->images()->onlyTrashed()->update(['deleted_at' => null]);
+        });
+    }
+
+    /**
+     * The columns Scout searches.
+     *
+     * `description` is matched with MATCH ... AGAINST through the FULLTEXT
+     * index its migration adds - so it matches whole *words*, ignores terms
+     * under innodb_ft_min_token_size (3 by default), and finds nothing for a
+     * mid-word fragment. Everything else here is a `%term%` LIKE, `title`
+     * included, which is what keeps partial-title search working.
+     *
+     * The dotted keys are left alone by qualifyColumn() and resolve against the
+     * aliases newScoutQuery() joins. Their values are never read - the database
+     * engine takes only the keys and queries the tables directly - hence null
+     * rather than a relation access that would be an N+1 if it ever ran.
+     *
+     * `id` is deliberately absent, unlike User's. Scout takes its searchable
+     * columns from this method, which belongs to the class rather than to the
+     * query, so an id clause could not be limited to the admin table - the
+     * gallery calls the same endpoint. Adding it in DocumentController instead
+     * is worse: it would have to OR at the top level, where it would escape
+     * scopeVisibleTo()'s AND and let a member fetch any document by guessing a
+     * number. Read the note on newScoutQuery() before reconsidering.
+     *
+     * @return array<string, mixed>
+     */
+    #[SearchUsingFullText(['description'])]
+    public function toSearchableArray(): array
+    {
+        return [
+            'title' => $this->title,
+            'description' => $this->description,
+            self::SEARCH_CREATOR.'.name' => null,
+            self::SEARCH_TEAM.'.name' => null,
+        ];
+    }
+
+    /**
+     * The query Scout's database engine builds its search on.
+     *
+     * This exists so the creator and team names can sit *inside* the engine's
+     * OR group rather than beside it. That is a correctness requirement, not a
+     * tidiness one: the engine appends both its search() callback and its
+     * query() callback at the top level, so ORing the two relations in either
+     * of those would compile to
+     *
+     *     WHERE (title LIKE ? OR MATCH(description) ...) OR EXISTS(...) AND team_id = ?
+     *
+     * and AND binds tighter than OR. Eloquent does soften this: callScope()
+     * nests the existing wheres before a local scope adds its own, so
+     * scopeVisibleTo() as written today would still wrap that OR. But that
+     * safety is incidental - it holds only while visibleTo() remains a scope
+     * *and* stays the last thing applied, and an OR added after it leaks
+     * immediately, which DocumentCrudTest's "keeps a search inside the callers
+     * team" demonstrates. Joining here instead keeps every clause inside the one
+     * group the engine already wraps, so the team scope ANDs with the whole of
+     * it whatever else is bolted on later.
+     *
+     * Both joins are many-to-one, so neither can duplicate a row - which is why
+     * a join is safe here even though the *sorts* in DocumentController::index()
+     * must stay correlated subselects. The users join is a LEFT join because
+     * user_id became nullable when users turned soft-deletable; the teams join
+     * is an inner join, since documents.team_id is NOT NULL and the join below
+     * carries no deleted_at filter, so every document has a row to match.
+     *
+     * They differ on deleted_at, deliberately, because each matches what the
+     * row actually displays. A trashed *team* still shows its name in the team
+     * cell, so that join carries no filter and the document stays findable by
+     * it - what the withTrashed() on the old orWhereHas did. A binned *author*
+     * shows as "[deleted]", so that join filters them out and their name stops
+     * matching. Search should find what the reader can see.
+     *
+     * Aliased rather than joined bare, so nothing collides with the `users` and
+     * `teams` those sort subselects bring into scope.
+     */
+    public function newScoutQuery(ScoutBuilder $builder): Builder
+    {
+        // Nothing to search means nothing to join: the listing is served
+        // unsearched far more often than not.
+        if (blank($builder->query)) {
+            return static::query();
+        }
+
+        return static::query()
+            // Required once anything is joined, or the joined `id` columns
+            // overwrite documents.id as the row is hydrated.
+            ->select($this->getTable().'.*')
+            // Left, with the deleted_at test in the ON clause rather than a
+            // where: a binned author's row still exists, so an inner join would
+            // keep matching their name and search would surface content the
+            // resource labels "[deleted]" - while the creator *sort*, an
+            // Eloquent subselect that does carry the scope, files it under null.
+            // Those three have to agree. Putting the test in a where instead
+            // would drop the rows from the listing altogether rather than merely
+            // making the name unmatchable.
+            //
+            // Nullable user_id since users became soft-deletable makes a left
+            // join the correct shape regardless.
+            ->leftJoin(
+                'users as '.self::SEARCH_CREATOR,
+                fn ($join) => $join
+                    ->on(self::SEARCH_CREATOR.'.id', '=', 'documents.user_id')
+                    ->whereNull(self::SEARCH_CREATOR.'.deleted_at'),
+            )
+            ->join(
+                'teams as '.self::SEARCH_TEAM,
+                self::SEARCH_TEAM.'.id', '=', 'documents.team_id',
+            );
+    }
+
+    /**
+     * The rows `model:prune` may destroy on this run.
+     *
+     * Conditional on the team for the same reason Image::prunable() is
+     * conditional on the document, one level up: Team::booted() bins a team's
+     * documents when the team goes, and a team outlives its documents by
+     * twenty-three days. Pruning on the timestamp alone would empty a team's
+     * bin in week one and restore it hollow in week four, against the
+     * restore-whole promise Team::restoring() makes.
+     *
+     * So a document is only prunable on its own clock while its team is live.
+     * One trashed under its team waits, and is destroyed by the team's own
+     * force-delete hook when the team's window runs out.
+     *
+     * whereHas('team') is the whole test, and means a *live* team: team() is a
+     * belongsTo onto a soft-deleting model, so it carries Team's scope.
+     * documents.team_id is NOT NULL, so there is no team-less case to allow
+     * for - which makes this exactly the shape of Image::prunable() one rung
+     * down, no nested group needed.
+     *
+     * @return Builder<static>
+     */
+    public function prunable(): Builder
+    {
+        return static::where('deleted_at', '<=', now()->subDays(self::RETENTION_DAYS))
+            ->whereHas('team');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
+    }
+
+    public function images(): HasMany
+    {
+        return $this->hasMany(Image::class);
+    }
+
+    /**
+     * Whether the owning team is itself in the bin.
+     *
+     * team() cannot answer this: it carries Team's soft-delete scope, so it
+     * resolves to null for a trashed team — indistinguishable from "no team" if
+     * that were still possible. It is not, since documents.team_id is NOT NULL,
+     * but the relation still reads null and so still cannot be the test. Hence
+     * withTrashed() against the key directly.
+     *
+     * The document's own trashed state cannot answer it either: how a document
+     * came to be in the bin makes no difference here. One binned on its own,
+     * whose team was deleted afterwards, is refused just the same — and comes
+     * back with that team, since a team's restore empties its whole bin.
+     */
+    public function teamIsTrashed(): bool
+    {
+        return Team::withTrashed()
+            ->whereKey($this->team_id)
+            ->whereNotNull('deleted_at')
+            ->exists();
+    }
+
+    /**
+     * Restrict a listing to what this user is allowed to see: everything for a
+     * super-admin, otherwise only their own team's documents.
+     *
+     * A team-less non-super-admin matches nothing: they have no team whose
+     * entries they could be entitled to. Said outright rather than left to
+     * `where('team_id', null)`, which Builder rewrites to `IS NULL` and so
+     * happens to return the same empty set — but only because the column is NOT
+     * NULL, and it reads like an oversight rather than the rule.
+     */
+    public function scopeVisibleTo(Builder $query, User $user): void
+    {
+        if ($user->is_super_admin) {
+            return;
+        }
+
+        $teamId = $user->teamAssignment()['team_id'] ?? null;
+
+        if ($teamId === null) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->where('team_id', $teamId);
+    }
+}

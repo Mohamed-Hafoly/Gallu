@@ -1,0 +1,38 @@
+<?php
+
+namespace App\Http\Resources;
+
+use App\Models\Team;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/**
+ * @mixin Team
+ */
+class TeamResource extends JsonResource
+{
+    /**
+     * Transform the resource into an array.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'description' => $this->description,
+            'creator' => $this->whenLoaded('user', fn () => $this->user?->name),
+            // Only present when the query asked for it, so the picker's payload
+            // stays lean.
+            'members_count' => $this->whenCounted('members'),
+            // Live documents only — the relation carries Document's soft-delete
+            // scope, so this is exactly the set Team::booted() will bin along
+            // with the team. The delete confirmation says the number out loud.
+            'documents_count' => $this->whenCounted('documents'),
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
+            'deleted_at' => $this->deleted_at,
+        ];
+    }
+}
