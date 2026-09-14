@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Environment
+.env
+.env.backup
+.env.production
+
+# Editor and local tooling
+.vscode/
+.idea/
+.claude/
+.mcp.json
+CLAUDE.md
+AGENTS.md
+
+# Working files, not part of the application
+misc/
+req.txt
+default-avatar.jpg
+
+# OS
+.DS_Store
+Thumbs.db

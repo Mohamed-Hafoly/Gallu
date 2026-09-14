@@ -1,0 +1,21 @@
+{
+  "folders": [
+    {
+      "path": "backend",
+    },
+    {
+      "path": "frontend",
+    },
+  ],
+  "settings": {
+    "i18n-ally.keystyle": "nested",
+    "Laravel.phpEnvironment": "herd",
+    "intelephense.files.exclude": [
+      "**/node_modules/**",
+      "**/.git/**",
+      "frontend/**",
+    ],
+    "intelephense.files.maxSize": 5000000,
+    "Laravel.basePath": "/backend",
+  },
+}
