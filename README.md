@@ -179,7 +179,7 @@ nothing a test just inserted.
 
 ## Status
 
-Users, teams, categories, documents and images are complete, including every bin and restore path.
-Still open: the category write endpoints are not gated yet.
+Users, teams, categories, documents and images are complete, including every bin and restore path,
+and every admin endpoint is behind a policy.
 
 Why any of it is built this way: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

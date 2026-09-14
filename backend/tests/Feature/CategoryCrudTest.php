@@ -21,8 +21,34 @@ it('requires authentication to create, update, delete or restore a category', fu
     postJson("/api/categories/{$category->id}/restore")->assertUnauthorized();
 });
 
+it('forbids a signed-in user who is not a super admin', function () {
+    $actor = User::factory()->create();
+    $category = Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
+    $trashed = Category::factory()->create();
+    $trashed->delete();
+
+    actingAs($actor)->getJson('/api/categories')->assertForbidden();
+    actingAs($actor)->postJson('/api/categories', ['name_en' => 'Fresh', 'name_ar' => 'جديد'])->assertForbidden();
+    actingAs($actor)->patchJson("/api/categories/{$category->id}", ['name_en' => 'Renamed'])->assertForbidden();
+    actingAs($actor)->deleteJson("/api/categories/{$category->id}")->assertForbidden();
+    actingAs($actor)->postJson("/api/categories/{$trashed->id}/restore")->assertForbidden();
+
+    $this->assertDatabaseMissing('categories', ['name_en' => 'Fresh']);
+    $this->assertDatabaseHas('categories', ['id' => $category->id, 'name_en' => 'Sports']);
+    $this->assertNotSoftDeleted($category);
+});
+
+// The one category endpoint that is *not* super-admin only, and deliberately
+// so: tagging an image needs the category list, and every user uploads images.
+it('still serves the picker to a user who is not a super admin', function () {
+    $actor = User::factory()->create();
+    Category::factory()->count(3)->create();
+
+    actingAs($actor)->getJson('/api/categories/picker')->assertOk()->assertJsonCount(3, 'data');
+});
+
 it('creates a category and reports the authenticated user as its creator', function () {
-    $user = User::factory()->create(['name' => 'Ada Lovelace']);
+    $user = User::factory()->superAdmin()->create(['name' => 'Ada Lovelace']);
 
     actingAs($user)
         ->postJson('/api/categories', ['name_en' => 'Sports', 'name_ar' => 'رياضة'])
@@ -40,7 +66,7 @@ it('creates a category and reports the authenticated user as its creator', funct
 
 // TODO: 3 fields ?
 it('rejects a category whose name is already taken', function (string $field, string $value) {
-    $user = User::factory()->create();
+    $user = superAdmin();
     Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
 
     actingAs($user)
@@ -52,7 +78,7 @@ it('rejects a category whose name is already taken', function (string $field, st
 ]);
 
 it('rejects a name that a soft-deleted category still holds', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة'])->delete();
 
     actingAs($user)
@@ -61,7 +87,7 @@ it('rejects a name that a soft-deleted category still holds', function () {
 });
 
 it('requires both names to create a category', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
 
     actingAs($user)
         ->postJson('/api/categories', [])
@@ -69,7 +95,7 @@ it('requires both names to create a category', function () {
 });
 
 it('rejects names longer than 40 characters', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
 
     actingAs($user)
         ->postJson('/api/categories', ['name_en' => str_repeat('a', 41), 'name_ar' => 'جديد'])
@@ -77,7 +103,7 @@ it('rejects names longer than 40 characters', function () {
 });
 
 it('updates one name at a time, leaving the other untouched', function (string $field, string $value) {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
 
     actingAs($user)
@@ -95,7 +121,7 @@ it('updates one name at a time, leaving the other untouched', function (string $
 
 // What the edit dialog sends whenever both fields were changed.
 it('updates both names in one request', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
 
     actingAs($user)
@@ -115,7 +141,7 @@ it('updates both names in one request', function () {
 });
 
 it('rejects an update that sends neither name', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create();
 
     actingAs($user)
@@ -124,7 +150,7 @@ it('rejects an update that sends neither name', function () {
 });
 
 it('lets a category keep its own name while updating', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
 
     actingAs($user)
@@ -134,7 +160,7 @@ it('lets a category keep its own name while updating', function () {
 });
 
 it('rejects renaming onto another category, trashed or not', function (bool $trashed) {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
     $other = Category::factory()->create(['name_en' => 'Taken', 'name_ar' => 'محجوز']);
 
@@ -151,7 +177,7 @@ it('rejects renaming onto another category, trashed or not', function (bool $tra
 ]);
 
 it('soft deletes a category', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create();
 
     actingAs($user)
@@ -162,7 +188,7 @@ it('soft deletes a category', function () {
 });
 
 it('returns 404 when updating or deleting an already trashed category', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create();
     $category->delete();
 
@@ -171,7 +197,7 @@ it('returns 404 when updating or deleting an already trashed category', function
 });
 
 it('reports deleted_at as null for a live category', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     Category::factory()->create(['name_en' => 'Live', 'name_ar' => 'حي']);
 
     actingAs($user)
@@ -181,7 +207,7 @@ it('reports deleted_at as null for a live category', function () {
 });
 
 it('restores a trashed category and frees its name again', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
     $category->delete();
 
@@ -211,7 +237,7 @@ it('serves every live category unpaginated to the picker, without the creator', 
 });
 
 it('treats a padded name as a duplicate, since TrimStrings runs globally', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
 
     actingAs($user)
@@ -224,7 +250,7 @@ it('requires authentication to use the picker', function () {
 });
 
 it('returns 404 when restoring a category that is not trashed', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create();
 
     actingAs($user)

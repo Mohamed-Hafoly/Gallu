@@ -14,7 +14,7 @@ it('requires authentication to list categories', function () {
 });
 
 it('lists all categories', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     Category::factory()->count(3)->create();
 
     actingAs($user)
@@ -27,7 +27,7 @@ it('lists all categories', function () {
 // The admin screen needs the trashed rows to populate its "pending deletion"
 // table. The picker endpoint is the one that filters them out.
 it('includes soft-deleted categories in the listing', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     Category::factory()->count(2)->create();
     Category::factory()->create()->delete();
 
@@ -40,7 +40,7 @@ it('includes soft-deleted categories in the listing', function () {
 });
 
 it('exposes the name of the user who created the category', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $creator = User::factory()->create(['name' => 'Ada Lovelace']);
     Category::factory()->for($creator)->create();
 
@@ -51,7 +51,7 @@ it('exposes the name of the user who created the category', function () {
 });
 
 it('still lists a category whose creator was deleted, with a null creator', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $creator = User::factory()->create();
     Category::factory()->for($creator)->create();
 
@@ -67,7 +67,7 @@ it('still lists a category whose creator was deleted, with a null creator', func
 // The admin table renders both timestamps alongside the names, so a dropped
 // field here is a blank column rather than an error.
 it('exposes every field the admin table renders', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     Category::factory()->create();
 
     $row = actingAs($user)->getJson('/api/categories')->assertOk()->json('data.0');
@@ -78,7 +78,7 @@ it('exposes every field the admin table renders', function () {
 });
 
 it('reports both timestamps for a live category, and no deletion', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create();
 
     actingAs($user)
@@ -92,7 +92,7 @@ it('reports both timestamps for a live category, and no deletion', function () {
 // TODO: why not compare to now()?
 
 it('reports updated_at moving when a category is renamed', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create([
         'created_at' => now()->subWeek(),
         'updated_at' => now()->subWeek(),
@@ -107,7 +107,7 @@ it('reports updated_at moving when a category is renamed', function () {
 });
 
 it('reports deleted_at once a category is trashed', function () {
-    $user = User::factory()->create();
+    $user = superAdmin();
     $category = Category::factory()->create();
     $category->delete();
 
