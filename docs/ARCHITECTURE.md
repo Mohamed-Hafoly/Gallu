@@ -57,6 +57,15 @@ gate has already short-circuited for the only role allowed through. Rules that m
 super-admins too (you may not delete or demote yourself) are explicit controller guards,
 since no policy can express them.
 
+Four policies follow that shape — `UserPolicy`, `TeamPolicy`, `CategoryPolicy` and the pair
+`DocumentPolicy` / `ImagePolicy`, which do carry real rules because ownership inside a team is
+a genuine distinction. The one deliberate hole is `CategoryController::picker()`: tagging an
+image needs the category list and every user uploads images, so that single endpoint is
+ungated while the listing beside it — same model, but carrying trashed rows and creator names
+for the admin screen — is not. Teams can gate their picker because only a super-admin ever
+opens a team select; categories cannot, which is why they need a policy of their own rather
+than reusing the teams shape.
+
 ## Teams
 
 Membership *is* the role assignment. There is no `team_id` column on `users` and no pivot
