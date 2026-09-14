@@ -89,7 +89,7 @@ it('reports both timestamps for a live category, and no deletion', function () {
         ->assertJsonPath('data.0.deleted_at', null);
 });
 
-//TODO: why not compare to now()?
+// TODO: why not compare to now()?
 
 it('reports updated_at moving when a category is renamed', function () {
     $user = User::factory()->create();

@@ -38,8 +38,7 @@ it('creates a category and reports the authenticated user as its creator', funct
     ]);
 });
 
-
- // TODO: 3 fields ?
+// TODO: 3 fields ?
 it('rejects a category whose name is already taken', function (string $field, string $value) {
     $user = User::factory()->create();
     Category::factory()->create(['name_en' => 'Sports', 'name_ar' => 'رياضة']);
