@@ -26,3 +26,10 @@ Thumbs.db
 
 _ide_helper_models.php
 _ide_helper.php
+
+# Local AI tooling, regenerated on demand
+.claude/
+.mcp.json
+AGENTS.md
+boost.json
+CLAUDE.md
