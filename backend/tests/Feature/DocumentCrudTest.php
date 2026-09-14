@@ -113,7 +113,9 @@ it('shows a super admin every teams documents', function () {
     actingAs(superAdmin())->getJson('/api/documents')->assertOk()->assertJsonCount(2, 'data');
 });
 
-// DatabaseSeeder seeds no teams, so this is the state of a fresh install.
+// The state of any user DatabaseSeeder leaves unassigned - it seeds 100 of
+// them beside the teams - and of every super-admin, who belong to no team by
+// design. scopeVisibleTo() short-circuits to an empty result for all of them.
 it('shows a team less member nothing at all', function () {
     teamFixture();
 
