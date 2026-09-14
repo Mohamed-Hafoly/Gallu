@@ -180,7 +180,6 @@ nothing a test just inserted.
 ## Status
 
 Users, teams, categories, documents and images are complete, including every bin and restore path.
-Still open: the landing page is Vuetify's starter content, the settings page is a stub, the category
-write endpoints are not gated yet, and a few placeholder API routes remain.
+Still open: the category write endpoints are not gated yet, and two placeholder API routes remain.
 
 Why any of it is built this way: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
