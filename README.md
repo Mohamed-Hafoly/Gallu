@@ -180,6 +180,6 @@ nothing a test just inserted.
 ## Status
 
 Users, teams, categories, documents and images are complete, including every bin and restore path.
-Still open: the category write endpoints are not gated yet, and two placeholder API routes remain.
+Still open: the category write endpoints are not gated yet.
 
 Why any of it is built this way: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

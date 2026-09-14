@@ -67,8 +67,4 @@ Route::middleware(['auth:sanctum', SetPermissionsTeam::class])->group(function (
     // without it the soft-deleted user the admin screen is trying to restore
     // 404s at binding.
     Route::post('/users/{user}/restore', [UserController::class, 'restore'])->withTrashed();
-
-    Route::get('/gallery', fn () => 'hellp');
-    Route::get('/profile', fn () => 'hellp');
-    Route::get('/', fn () => 'hellp');
 });
